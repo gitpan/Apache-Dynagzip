@@ -14,13 +14,11 @@ But what if the browser is sending this one:
 
      The HTTP definitions says:
      "If a parameter has a quality value of 0, then content with this parameter
-     is
-     'not acceptable' for the client."
+     is 'not acceptable' for the client."
      
 TE header compatibility for HTTP/1.1 see rfc2616 14.39
 Local Cache Control features for NN and MSIE
 CGI/1.1 support + redirected request
-Log the Compression Ratio
 Serve the Lost Connection.
 
 I'm not sure that
@@ -55,16 +53,6 @@ duplicate important header tags such as Vary in the HTTP header AND in the
 HTML document <head> section.
 
 -Glenn
-===========================================================================
-From: =?iso-8859-1?Q?Nicholas_Oxh=F8j?= <nicholas-modperl@oxhoej.dk>
-To: <modperl@apache.org>
-Subject: "Streaming" compression of output from mod_perl handler?
-Date: Tue, 19 Feb 2002 09:01:34 +0100
-
-So I am basically looking for anyone who has had any success in achieving this kind of "streaming" compression,
-who could direct me at an appropriate Apache module.
-
-Nicholas Oxhøj
 ===========================================================================
 From: 	Michael.Schroepl@telekurs.de
 To: 	mod_gzip@lists.over.net

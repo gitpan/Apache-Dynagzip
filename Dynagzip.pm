@@ -13,7 +13,7 @@ use Fcntl qw(:flock);
 use FileHandle;
 
 use vars qw($VERSION $BUFFERSIZE %ENV);
-$VERSION = "0.11";
+$VERSION = "0.13";
 $BUFFERSIZE = 16384;
 use constant MAGIC1	=> 0x1f ;
 use constant MAGIC2	=> 0x8b ;
@@ -27,16 +27,16 @@ use constant MAX_ATTEMPTS_TO_TRY_FLOCK => 10;  # max limit seconds to sleep, wai
 use constant PAGE_LIFE_TIME_DEFAULT    => 300; # sec
 
 sub can_gzip_for_this_client {
-	# This is the only place where I decide whether or not the main request of the client
+	# This is the only place where I decide whether or not the main request
 	# could be served with gzip compression.
 	# call model: my $can_gzip = can_gzip_for_this_client($r);
 	my $r = shift;
 	my $result = undef; # false is default
-    local $^W = 0;
+	local $^W = 0; # no warnings when Accept-Encoding does not exist:
 	if ($r->header_in('Accept-Encoding') =~ /gzip/){
 		$result = 1; # true
 	}
-	# All known exceptions should go in here...
+	# See Apache::CompressClientFixup for all known exceptions...
 	#
 	return $result;
 }
@@ -213,8 +213,18 @@ sub handler { # it is supposed to be only a dispatcher since now...
 				$r->log->error($qualifiedName.' aborts:'.$message.$r->filename);
 				return SERVER_ERROR;
 			}
-			my $headers = retrieve_all_cgi_headers_via ($fh);
-			$r->send_cgi_header($headers); # just for the case...
+
+			# Inside the filter chain it might be necessary to prpogate CGI headers (?)
+			# I retrieve headers from the stream when UseCGIHeadersFromScript is set ON:
+			if (cgi_headers_from_script($r)) {
+				my $headers = retrieve_all_cgi_headers_via ($fh);
+				$r->log->debug($qualifiedName.' has CGI-header(s): '.$headers);
+				$r->send_cgi_header($headers);
+			} else { # create own set of HTTP headers:
+				$r->log->debug($qualifiedName.' creates own HTTP headers for '.$r->the_request);
+				$r->content_type("text/html") unless $r->header_out('Content-Type');
+				$r->send_http_header;
+			}
 			if ($r->header_only){
 				$r->log->warn($qualifiedName.' request for HTTP header only is done OK for '.$r->the_request);
 				return OK;
@@ -226,7 +236,8 @@ sub handler { # it is supposed to be only a dispatcher since now...
 					print ($_);
 				}
 			}
-			$r->log->warn($qualifiedName.' is done OK for '.$r->the_request);
+			$r->log->warn($qualifiedName.' is done OK for '.$r->the_request
+					.' '.$r->bytes_sent.' bytes sent');
 			return OK;
 		} # if ($filter)
 
@@ -266,7 +277,8 @@ sub handler { # it is supposed to be only a dispatcher since now...
 				$r->send_fd($fh);
 			}
 			$fh->close;
-			$r->log->warn($qualifiedName.' is done OK for '.$r->the_request);
+			$r->log->warn($qualifiedName.' is done OK for '.$r->the_request
+						.' '.$r->bytes_sent.' bytes sent');
 			return OK;
 		} # unless ($binaryCGI)
 
@@ -321,7 +333,8 @@ sub handler { # it is supposed to be only a dispatcher since now...
 			}
 		}
 		$fh->close;
-		$r->log->warn($qualifiedName.' is done OK for '.$r->the_request);
+		$r->log->warn($qualifiedName.' is done OK for '.$r->the_request
+				.' '.$r->bytes_sent.' bytes sent');
 		return OK;
 	} # unless ($r->is_main)
 	
@@ -344,7 +357,7 @@ sub handler { # it is supposed to be only a dispatcher since now...
 	} else {
 		$message .= 'Plain File.';
 	}
-    $message .= ' The client '.($r->header_in("User-agent") || '');
+	$message .= ' The client '.($r->header_in("User-agent") || '');
 	if ($can_gzip){
 		$message .= ' accepts GZIP.';
 	} else {
@@ -393,8 +406,15 @@ unless ($can_chunk) {
 				$r->log->error($qualifiedName.' aborts:'.$message.$r->filename);
 				return SERVER_ERROR;
 			}
-			my $headers = retrieve_all_cgi_headers_via ($fh);
-			$r->send_cgi_header($headers); # just for the case...
+			if (cgi_headers_from_script($r)) {
+				my $headers = retrieve_all_cgi_headers_via ($fh);
+				$r->log->debug($qualifiedName.' has CGI-header(s): '.$headers);
+				$r->send_cgi_header($headers);
+			} else { # create the own set of HTTP headers:
+				$r->log->debug($qualifiedName.' creates own HTTP headers for '.$r->the_request);
+				$r->content_type("text/html") unless $r->header_out('Content-Type');
+				$r->send_http_header;
+			}
 			if ($r->header_only){
 				my $message = ' request for HTTP header only is done OK for ';
 				$r->log->info($qualifiedName.$message.$r->the_request);
@@ -415,7 +435,8 @@ unless ($can_chunk) {
 				$r->notes('ref_source' => \$body);
 				$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 			}
-			$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+			$r->log->info($qualifiedName.' is done OK for '.$r->filename
+					.' '.$r->bytes_sent.' bytes sent');
 			return OK;
 		} # if ($filter)
 
@@ -470,7 +491,8 @@ unless ($can_chunk) {
 				$r->notes('ref_source' => \$body);
 				$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 			}
-			$r->log->warn($qualifiedName.' is done OK for '.$r->the_request.' targeted '.$r->filename);
+			$r->log->warn($qualifiedName.' is done OK for '.$r->the_request
+				.' targeted '.$r->filename.' '.$r->bytes_sent.' bytes sent');
 			return OK;
 		} # unless ($binaryCGI)
 
@@ -535,7 +557,8 @@ unless ($can_chunk) {
 			$r->notes('ref_source' => \$body);
 			$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 		}
-		$r->log->info($qualifiedName.' is done OK for '.$r->the_request);
+		$r->log->info($qualifiedName.' is done OK for '.$r->the_request
+				.' '.$r->bytes_sent.' bytes sent');
 		return OK;
 
 	} # unless ($can_gzip)
@@ -558,9 +581,9 @@ unless ($can_chunk) {
 		}
 		if (cgi_headers_from_script($r)) {
 			my $headers = retrieve_all_cgi_headers_via ($fh);
-			$r->log->debug($qualifiedName.' has CGI-header(s): '.$headers.' from '.$r->filename);
+			$r->log->debug($qualifiedName.' has CGI-headers: '.$headers);
 			$r->send_cgi_header($headers);
-		} else { # create the own set of HTTP headers:
+		} else { # create own set of HTTP headers:
 			$r->log->debug($qualifiedName.' creates own HTTP headers for '.$r->the_request);
 			$r->content_type("text/html") unless $r->header_out('Content-Type');
 			$r->send_http_header;
@@ -576,7 +599,8 @@ unless ($can_chunk) {
 		     -WindowBits => - MAX_WBITS(),);
 		unless ($status == Z_OK()){ # log the Error:
 			my $message = 'Cannot create a deflation stream. ';
-			$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+			$r->log->error($qualifiedName.' aborts: '.$message.' gzip status='.$status
+					.' '.$r->bytes_sent.' bytes sent');
 			return SERVER_ERROR;
 		}
 		# Create the first outgoing portion of the content:
@@ -603,7 +627,8 @@ unless ($can_chunk) {
 			} else { # log the Error:
 				$gzip_handler = undef; # clean it up...
 				my $message = 'Cannot gzip the Current Section. ';
-				$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+				$r->log->error($qualifiedName.' aborts: '.$message.' gzip status='.$status
+						.' '.$r->bytes_sent.' bytes sent');
 				return SERVER_ERROR;
 			}
 			if (length($chunkBody) > $minChunkSize ){ # send it...
@@ -622,7 +647,8 @@ unless ($can_chunk) {
 			$r->notes('ref_source' => \$body);
 			$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 		}
-		$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+		$r->log->info($qualifiedName.' is done OK for '.$r->filename
+				.' '.$r->bytes_sent.' bytes sent');
 		return OK;
 	} # if ($filter)
 
@@ -696,7 +722,8 @@ unless ($can_chunk) {
 				$fh->close; # and unlock...
 				$gzip_handler = undef; # clean it up...
 				my $message = 'Cannot gzip the Current Section. ';
-				$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+				$r->log->error($qualifiedName.' aborts: '.$message.' gzip status='.$status
+						.' '.$r->bytes_sent.' bytes sent');
 				return SERVER_ERROR;
 			}
 			if (length($chunkBody) > $minChunkSize ){ # send it...
@@ -715,7 +742,8 @@ unless ($can_chunk) {
 			$r->notes('ref_source' => \$body);
 			$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 		}
-		$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+		$r->log->info($qualifiedName.' is done OK for '.$r->filename
+				.' '.$r->bytes_sent.' bytes sent');
 		return OK;
 	} # unless ($binaryCGI)
 
@@ -785,7 +813,8 @@ unless ($can_chunk) {
 	     -WindowBits => - MAX_WBITS(),);
 	unless ($status == Z_OK()){ # log the Error:
 		my $message = 'Cannot create a deflation stream. ';
-		$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+		$r->log->error($qualifiedName.' aborts: '.$message.' gzip status='.$status
+				.' '.$r->bytes_sent.' bytes sent');
 		return SERVER_ERROR;
 	}
 	# Create the first outgoing portion of the content:
@@ -815,7 +844,8 @@ unless ($can_chunk) {
 		} else { # log the Error:
 			$fh->close;
 			$gzip_handler = undef; # clean it up...
-			$r->log->error($qualifiedName.' aborts: Cannot gzip this section. gzip status='.$status);
+			$r->log->error($qualifiedName.' aborts: Cannot gzip this section. gzip status='
+					.$status.' '.$r->bytes_sent.' bytes sent');
 			return SERVER_ERROR;
 		}
 		if (length($chunkBody) > $minChunkSize ){ # send it...
@@ -835,7 +865,8 @@ unless ($can_chunk) {
 		$r->notes('ref_source' => \$body);
 		$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 	}
-	$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+	$r->log->info($qualifiedName.' is done OK for '.$r->filename
+			.' '.$r->bytes_sent.' bytes sent');
 	return OK;
 
 } # unless ($can_chunk)
@@ -859,8 +890,15 @@ unless ($can_chunk) {
 				$r->log->error($qualifiedName.' aborts:'.$message.$r->filename);
 				return SERVER_ERROR;
 			}
-			my $headers = retrieve_all_cgi_headers_via ($fh);
-			$r->send_cgi_header($headers); # just for the case...
+			if (cgi_headers_from_script($r)) {
+				my $headers = retrieve_all_cgi_headers_via ($fh);
+				$r->log->debug($qualifiedName.' has CGI-header(s): '.$headers);
+				$r->send_cgi_header($headers);
+			} else { # create own set of HTTP headers:
+				$r->log->debug($qualifiedName.' creates own HTTP headers for '.$r->the_request);
+				$r->content_type("text/html") unless $r->header_out('Content-Type');
+				$r->send_http_header;
+			}
 			if ($r->header_only){
 				$r->log->info($qualifiedName.' request for HTTP header only is done OK for '.$r->the_request);
 				return OK;
@@ -892,7 +930,8 @@ unless ($can_chunk) {
 				$r->notes('ref_source' => \$body);
 				$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 			}
-			$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+			$r->log->info($qualifiedName.' is done OK for '.$r->filename
+					.' '.$r->bytes_sent.' bytes sent');
 			return OK;
 		} # if ($filter)
 
@@ -958,7 +997,8 @@ unless ($can_chunk) {
 				$r->notes('ref_source' => \$body);
 				$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 			}
-			$r->log->warn($qualifiedName.' is done OK for '.$r->the_request.' targeted '.$r->filename);
+			$r->log->warn($qualifiedName.' is done OK for '.$r->the_request
+					.' targeted '.$r->filename.' '.$r->bytes_sent.' bytes sent');
 			return OK;
 		} # unless ($binaryCGI)
 
@@ -1033,7 +1073,8 @@ unless ($can_chunk) {
 			$r->notes('ref_source' => \$body);
 			$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 		}
-		$r->log->warn($qualifiedName.' is done OK for '.$r->the_request);
+		$r->log->warn($qualifiedName.' is done OK for '.$r->the_request
+				.' '.$r->bytes_sent.' bytes sent');
 		return OK;
 	} # unless ($can_gzip)
 
@@ -1078,9 +1119,9 @@ unless ($can_chunk) {
 		}
 		if (cgi_headers_from_script($r)) {
 			my $headers = retrieve_all_cgi_headers_via ($fh);
-			$r->log->debug($qualifiedName.' has CGI-header(s): '.$headers.' from '.$r->filename);
+			$r->log->debug($qualifiedName.' has CGI-headers: '.$headers);
 			$r->send_cgi_header($headers);
-		} else { # create the own set of HTTP headers:
+		} else { # create own set of HTTP headers:
 			$r->log->debug($qualifiedName.' creates own HTTP headers for '.$r->the_request);
 			$r->content_type("text/html") unless $r->header_out('Content-Type');
 			$r->send_http_header;
@@ -1096,7 +1137,8 @@ unless ($can_chunk) {
 		     -WindowBits => - MAX_WBITS(),);
 		unless ($status == Z_OK()){ # log the Error:
 			my $message = 'Cannot create a deflation stream. ';
-			$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+			$r->log->error($qualifiedName.' aborts: '.$message.' gzip status='.$status
+					.' '.$r->bytes_sent.' bytes sent');
 			return SERVER_ERROR;
 		}
 		# Create the first outgoing portion of the content:
@@ -1123,7 +1165,8 @@ unless ($can_chunk) {
 			} else { # log the Error:
 				$gzip_handler = undef; # clean it up...
 				my $message = 'Cannot gzip the Current Section. ';
-				$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+				$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status
+						.' '.$r->bytes_sent.' bytes sent');
 				return SERVER_ERROR;
 			}
 			if (length($chunkBody) > $minChunkSize ){ # send it...
@@ -1145,7 +1188,8 @@ unless ($can_chunk) {
 			$r->notes('ref_source' => \$body);
 			$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 		}
-		$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+		$r->log->info($qualifiedName.' is done OK for '.$r->filename
+				.' '.$r->bytes_sent.' bytes sent');
 		return OK;
 	} # if ($filter)
 
@@ -1191,7 +1235,8 @@ unless ($can_chunk) {
 		unless ($status == Z_OK()){ # log the Error:
 			$fh->close; # and unlock...
 			my $message = 'Cannot create a deflation stream. ';
-			$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+			$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status
+					.' '.$r->bytes_sent.' bytes sent');
 			return SERVER_ERROR;
 		}
 		# Create the first outgoing portion of the content:
@@ -1199,12 +1244,14 @@ unless ($can_chunk) {
 		my $chunkBody = $gzipHeader;
 
 		my $body = ''; # incoming content
-		my $partialSourceLength = 0; # the length of the source associated with the portion gzipped in current chunk
+		my $partialSourceLength = 0;	# the length of the source associated
+						# with the portion gzipped in current chunk
 		my $lbr = Compress::LeadingBlankSpaces->new();
 		while (<$fh>) {
 			$_ = $lbr->squeeze_string($_) if $light_compression;
 			my $localPartialFlush = 0; # should be false default inside this loop
-			$body .= $_;    # accumulate all here to create the effective compression within the cleanup stage,
+			$body .= $_;    # accumulate all over here in order to create
+					# the effective compression within the cleanup stage,
 					# when the caching is ordered...
 			$partialSourceLength += length($_); # to deside if the partial flush is required
 			if ($partialSourceLength > $minChunkSizeSource){
@@ -1219,7 +1266,8 @@ unless ($can_chunk) {
 				$fh->close; # and unlock...
 				$gzip_handler = undef; # clean it up...
 				my $message = 'Cannot gzip the Current Section. ';
-				$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+				$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status
+						.' '.$r->bytes_sent.' bytes sent');
 				return SERVER_ERROR;
 			}
 			if (length($chunkBody) > $minChunkSize ){ # send it...
@@ -1240,11 +1288,12 @@ unless ($can_chunk) {
 			$r->notes('ref_source' => \$body);
 			$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 		}
-		$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+		$r->log->info($qualifiedName.' is done OK for '.$r->filename
+				.' '.$r->bytes_sent.' bytes sent');
 		return OK;
 	} # unless ($binaryCGI)
 
-	# It is Binary CGI to transfer with gzip compression:
+	# This is Binary CGI to transfer with gzip compression:
 	#
 	# double-check the target file's existance and access permissions:
 	unless (-e $r->finfo){
@@ -1310,44 +1359,46 @@ unless ($can_chunk) {
 	     -WindowBits => - MAX_WBITS(),);
 	unless ($status == Z_OK()){ # log the Error:
 		my $message = 'Cannot create a deflation stream. ';
-		$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+		$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status
+				.' '.$r->bytes_sent.' bytes sent');
 		return SERVER_ERROR;
 	}
 	# Create the first outgoing portion of the content:
-    my $gzipHeader = pack("C" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+	my $gzipHeader = pack("C" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
 	my $chunkBody = $gzipHeader;
 	my $body = ''; # incoming content
-	my $partialSourceLength = 0; # the length of the source associated with the portion gzipped in current chunk
-
+	my $partialSourceLength = 0;	# the length of the source associated
+					# with the portion gzipped in current chunk
 	my $buf;
 	{
-	local $\;
-	my $lbr = Compress::LeadingBlankSpaces->new();
-	while (defined($buf = <$fh>)){
-		$buf = $lbr->squeeze_string($buf) if $light_compression;
-		next unless $buf;
-		$body .= $buf;
-		my $localPartialFlush = 0; # should be false default inside this loop
-		$partialSourceLength += length($buf); # to deside if the partial flush is required
-		if ($partialSourceLength > $minChunkSizeSource){
-			$localPartialFlush = 1; # just true
-			$partialSourceLength = 0; # for the next pass
+		local $\;
+		my $lbr = Compress::LeadingBlankSpaces->new();
+		while (defined($buf = <$fh>)){
+			$buf = $lbr->squeeze_string($buf) if $light_compression;
+			next unless $buf;
+			$body .= $buf;
+			my $localPartialFlush = 0; # should be false default inside this loop
+			$partialSourceLength += length($buf); # to deside if the partial flush is required
+			if ($partialSourceLength > $minChunkSizeSource){
+				$localPartialFlush = 1; # just true
+				$partialSourceLength = 0; # for the next pass
+			}
+			my ($out, $status) = $gzip_handler->deflate(\$buf);
+			if ($status == Z_OK){
+				$chunkBody .= $out; # it may bring nothing indeed...
+				$chunkBody .= $gzip_handler->flush(Z_PARTIAL_FLUSH) if $localPartialFlush;
+			} else { # log the Error:
+				$fh->close;
+				$gzip_handler = undef; # clean it up...
+				$r->log->error($qualifiedName.' aborts: Cannot gzip this section. gzip status='
+						.$status.' '.$r->bytes_sent.' bytes sent');
+				return SERVER_ERROR;
+			}
+			if (length($chunkBody) > $minChunkSize ){ # send it...
+				print (chunk_out($chunkBody));
+				$chunkBody = ''; # for the next iteration
+			}
 		}
-		my ($out, $status) = $gzip_handler->deflate(\$buf);
-		if ($status == Z_OK){
-			$chunkBody .= $out; # it may bring nothing indeed...
-			$chunkBody .= $gzip_handler->flush(Z_PARTIAL_FLUSH) if $localPartialFlush;
-		} else { # log the Error:
-			$fh->close;
-			$gzip_handler = undef; # clean it up...
-			$r->log->error($qualifiedName.' aborts: Cannot gzip this section. gzip status='.$status);
-			return SERVER_ERROR;
-		}
-		if (length($chunkBody) > $minChunkSize ){ # send it...
-			print (chunk_out($chunkBody));
-			$chunkBody = ''; # for the next iteration
-		}
-	}
 	}
 	$fh->close;
 	$chunkBody .= $gzip_handler->flush();
@@ -1362,7 +1413,8 @@ unless ($can_chunk) {
 		$r->notes('ref_source' => \$body);
 		$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
 	}
-	$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+	$r->log->info($qualifiedName.' is done OK for '.$r->filename
+			.' '.$r->bytes_sent.' bytes sent');
 	return OK;
 }
 
@@ -1907,6 +1959,7 @@ Thanks to Vlad Jebelev for the patch which helps to survive possible dynamic Apa
 (especially serving MSIE request over SSL).
 Thanks to Rob Bloodgood and Damyan Ivanov for the patches those help to eliminate some unnecessary warnings.
 Thanks to John Siracusa for the hint to avoid the default content type settings when possible.
+Thanks to Richard Chen for the bug report concerning the uncompressed response.
 
 Obviously, I hold the full responsibility for how all those contributions are used here.
 
@@ -2422,7 +2475,7 @@ Slava Bizyayev E<lt>slava@cpan.orgE<gt> - Freelance Software Developer & Consult
 
 =head1 COPYRIGHT AND LICENSE
 
-I<Copyright (C) 2002, 2003 Slava Bizyayev. All rights reserved.>
+I<Copyright (C) 2002 - 2004 Slava Bizyayev. All rights reserved.>
 
 This package is free software.
 You can use it, redistribute it, and/or modify it under the same terms as Perl itself.
@@ -2431,13 +2484,15 @@ The latest version of this module can be found on CPAN.
 
 =head1 SEE ALSO
 
-C<mod_perl> at F<http://perl.apache.org>
+"Web Content Compression FAQ" at
+F<http://perl.apache.org/docs/tutorials/client/compression/compression.html>
 
 C<Compress::LeadingBlankSpaces> module can be found on CPAN.
 
 C<Compress::Zlib> module can be found on CPAN.
 
-The primary site for the C<zlib> compression library is F<http://www.info-zip.org/pub/infozip/zlib/>.
+The primary site for the C<zlib> compression library is
+F<http://www.info-zip.org/pub/infozip/zlib/>.
 
 C<Apache::Filter> module can be found on CPAN.
 
@@ -2448,6 +2503,7 @@ F<http://www.ietf.org/rfc.html> - rfc search by number (+ index list)
 
 F<http://cgi-spec.golux.com/draft-coar-cgi-v11-03-clean.html> CGI/1.1 rfc
 
-F<http://perl.apache.org/docs/general/correct_headers/correct_headers.html> "Issuing Correct HTTP Headers" by Andreas Koenig
+F<http://perl.apache.org/docs/general/correct_headers/correct_headers.html>
+"Issuing Correct HTTP Headers" by Andreas Koenig
 
 =cut

@@ -1,4 +1,4 @@
-Apache/Dynagzip version 0.11
+Apache/Dynagzip version 0.13
 ============================
 
 =head1 NAME
@@ -105,10 +105,11 @@ for the content generation phase, providing wider service from one the same stat
 
 Thanks to Tom Evans, Valerio Paolini, and Serge Bizyayev for their valuable idea contributions and multiple testing.
 Thanks to Igor Sysoev and Henrik Nordstrom who helped me to understand better the HTTP/1.0 compression features.
-Thanks to Vlad Jebelev for the patch which helps to survive possible dynamic Apache downgrade from HTTP/1.1 to HTTP/1.0
+Thanks to Vlad Jebelev for the patch that helps to survive possible dynamic Apache downgrade from HTTP/1.1 to HTTP/1.0
 (especially serving MSIE request over SSL).
 Thanks to Rob Bloodgood and Damyan Ivanov for the patches those help to eliminate some unnecessary warnings.
 Thanks to John Siracusa for the hint to avoid the default content type settings when possible.
+Thanks to Richard Chen for the bug report concerning the uncompressed response.
 
 Obviously, I hold the full responsibility for how all those contributions are used here.
 
@@ -1018,9 +1019,10 @@ Slava Bizyayev E<lt>slava@cpan.orgE<gt> - Freelance Software Developer & Consult
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2002 Slava Bizyayev. All rights reserved.
+Copyright (C) 2002 - 2004 Slava Bizyayev. All rights reserved.
 
-  This package is free software.
-  You can use it, redistribute it, and/or modify it under the same terms as Perl itself.
-  The latest version of this module can be found on CPAN.
+This package is free software.
+You can use it, redistribute it, and/or modify it under the same terms as Perl itself.
+
+The latest version of this module can be found on CPAN.
 

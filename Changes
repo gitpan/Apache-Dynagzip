@@ -1,6 +1,19 @@
-Revision history for Perl extension Apache::Dynagzip.
+Revision history for Apache::Dynagzip.
+
+0.13  Mon Apr 05 22:40:00 2004
+	- bugfix. Richard Chen discovered the unconditional retrievement of HTTP headers
+	  inside the brench of uncompressed response over HTTP/1.1 for filter chain. The same
+	  bug appears inside the brench of uncompressed response over HTTP/1.0. Fixed now.
+
+0.12  Mon Mar 15 21:15:00 2004
+	- log the amount of outgoing data. Version to test Igor Jovanovic's issue.
+	  31426 Mar 15 21:33 Apache-Dynagzip-0.12.tar.gz
 
 0.11  Mon Jul 21 11:00:00 2003
+	- bugfix. It was noticed that Apache::Dynagzip in some cases overwrites the Content-Type set
+	  by the earlier filter. Thanks to John Siracusa for the hint. This was fixed to "never
+	  overwrite the existent outgoing Content-Type".
+	  31136 Jul 21  2003 Apache-Dynagzip-0.11.tar.gz
 
 0.10  Fri Jul 18 23:30:00 2003
 	- Rob Bloodgood and Damyan Ivanov complained about "uninitialized value" warnings from unused
