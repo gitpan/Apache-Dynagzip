@@ -1,9 +1,9 @@
-Apache/Dynagzip version 0.03
+Apache/Dynagzip version 0.05
 ============================
 
 =head1 Apache::Dynagzip
 
-- mod_perl extension for C<Apache-1.3.X>. Version 0.04
+- mod_perl extension for C<Apache-1.3.X>. Version 0.05
 
 =head1 ABSTRACT
 

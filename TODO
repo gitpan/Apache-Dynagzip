@@ -1,5 +1,7 @@
 05/28/02
 ========
+HTTP/1.0 should never be chunked
+Local Cache Control features for NN and MSIE
 CGI/1.1 support
 Log the Compression Ratio
 Serve the Lost Connection

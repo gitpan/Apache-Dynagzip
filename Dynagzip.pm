@@ -12,7 +12,7 @@ use Fcntl qw(:flock);
 use FileHandle;
 
 use vars qw($VERSION $BUFFERSIZE %ENV);
-$VERSION = "0.04";
+$VERSION = "0.05";
 $BUFFERSIZE = 16384;
 use constant MAGIC1	=> 0x1f ;
 use constant MAGIC2	=> 0x8b ;
@@ -879,7 +879,7 @@ __END__
 
 =head1 NAME
 
-Apache::Dynagzip - mod_perl extension for C<Apache-1.3.X>. Version 0.04
+Apache::Dynagzip - mod_perl extension for C<Apache-1.3.X>. Version 0.05
 
 =head1 ABSTRACT
 

@@ -1,13 +1,17 @@
 Revision history for Perl extension Apache::Dynagzip.
 
+0.05  Sat Jun 15 18:00:00 2002
+	- Makefile.PL is fixed in order to pass CPAN tests
+
 0.04  Mon Jun 03 14:00:00 2002
 	- README is updated.
 	- Some typos in main doc fixed.
+	  24939 Jun  4 14:07 Apache-Dynagzip-0.04.tar.gz
 
 0.03  Sun May 26 14:26:00 2002
-	- fundamental revision of the code to avoid possible copyright questions from the Outlook Technologies, Inc.
+	- fundamental revision of the code to avoid possible copyright questions from Outlook Technologies, Inc.
 	  My own decision to publish the code on CPAN could never be considered a kind of competition with OLT
-	  business, since my layoff clearly demonstrate the fact that OLT has no business interests
+	  business, since my layoff clearly demonstrate the fact, that OLT has no business interests
 	  in this market of products and services, and does not plan to work on this market in future.
 	- documentation is edited appropriately.
 	  23002 Jun  3 12:17 Apache-Dynagzip-0.03.tar.gz
