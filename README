@@ -1,4 +1,4 @@
-Apache/Dynagzip version 0.14
+Apache/Dynagzip version 0.15
 ============================
 
 =head1 NAME
@@ -10,16 +10,15 @@ C<Apache::Dynagzip> - mod_perl extension for C<Apache-1.3.X> to compress the res
 This Apache handler provides dynamic content compression of the response data stream
 for C<HTTP/1.0> and C<HTTP/1.1> requests.
 
-Standard C<gzip> compression is optionally combined with C<extra light> compression,
-which eliminates leading blank spaces and/or blank lines within the source document.
+Standard C<gzip> compression is optionally combined with an C<extra light> compression
+that eliminates leading blank spaces and/or blank lines within the source document.
 This C<extra light> compression could be applied even when the client (browser)
 is not capable to decompress C<gzip> format.
 
-This handler helps to compress the outbound
+Handler helps to compress the outbound
 HTML content usually by 3 to 20 times, and provides a list of useful features.
-
-This handler is particularly useful for compressing outgoing web content
-which is dynamically generated on the fly (using templates, DB data, XML,
+This is particularly useful for compressing outgoing web content
+that is dynamically generated on the fly (using templates, DB data, XML,
 etc.), when at the time of the request it is impossible to determine the
 length of the document to be transmitted. Support for Perl, Java, and C
 source generators is provided.
@@ -27,7 +26,7 @@ source generators is provided.
 Besides the benefits of reduced document size, this approach gains efficiency
 from being able to overlap the various phases of data generation, compression,
 transmission, and decompression. In fact, the browser can start to
-decompress a document which has not yet been completely generated.
+decompress a document, which has not yet been completely generated.
 
 =head1 INSTALLATION
 

@@ -1,8 +1,14 @@
-Revision history for Apache::Dynagzip.
+Revision history for Apache::Dynagzip
+
+0.15  Sun May 02 15:11:00 2004
+	- clean up: Dan Kubb has found some inconsistences in implementation of UseCGIHeadersFromScript
+	  within the Filter chain. Documentation and the code were cleaned up in order to make sure
+	  that UseCGIHeadersFromScript does not affect functionality inside the  Filter chain.
 
 0.14  Sat Apr 24 22:50:00 2004
 	- documentation was edited in order to make it more clear, especially
 	  regarding previous code dhanges.
+	  23642 Apr 30 21:15 Apache-Dynagzip-0.14.tar.gz
 
 0.13  Mon Apr 05 22:40:00 2004
 	- bugfix. Richard Chen discovered the unconditional retrievement of HTTP headers

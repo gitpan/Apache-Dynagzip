@@ -17,19 +17,17 @@ But what if the browser is sending this one:
      is 'not acceptable' for the client."
      
 TE header compatibility for HTTP/1.1 see rfc2616 14.39
-Local Cache Control features for NN and MSIE
-CGI/1.1 support + redirected request
 Serve the Lost Connection.
+test.pl <=> Apache::Test
+Local Cache Control features for NN and MSIE
 
-I'm not sure that
-Dynamic control over the
+I'm not sure that Dynamic control over the
  - pageLifeTime
  - minChunkSize
  - minChunkSizeSource
  - minChunkSizePP
  - etc.
-via notes() is much better, than
-dynamic setup of appropriate conf variables...
+via notes() is much better, than dynamic setup of appropriate conf variables...
 
 ===========================================================================
 
