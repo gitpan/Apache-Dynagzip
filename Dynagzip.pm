@@ -13,7 +13,7 @@ use Fcntl qw(:flock);
 use FileHandle;
 
 use vars qw($VERSION $BUFFERSIZE %ENV);
-$VERSION = "0.07";
+$VERSION = "0.08";
 $BUFFERSIZE = 16384;
 use constant MAGIC1	=> 0x1f ;
 use constant MAGIC2	=> 0x8b ;
@@ -242,7 +242,7 @@ sub handler { # it is supposed to be only a dispatcher since now...
 			}
 			# I send no HTTP headers here just for case...
 			if ($light_compression) {
-				send_lightly_compressed($r, $fh);
+				send_lightly_compressed_stream($r, $fh);
 			} else { # no light compression
 				$r->send_fd($fh);
 			}
@@ -2150,7 +2150,11 @@ of the request. The internal variable C<pageLifeTime> has default value
 
   pageLifeTime = 300 # sec.
 
-which could be overwriten in C<httpd.conf>.
+which could be overwriten in C<httpd.conf> for example as:
+
+  PerlSetVar pageLifeTime 1800
+
+to make the C<pageLifeTime = 30 minutes>.
 
 Within the lifetime the client (browser) will
 not even try to access the server when you reach the same URL again.

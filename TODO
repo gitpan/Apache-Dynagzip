@@ -1,4 +1,22 @@
 Content-Encoding with q=  header.
+
+From: 	Michael.Schroepl@telekurs.de
+To: 	mod_gzip@lists.over.net
+Date: Mon, 21 Oct 2002 16:17:23 +0200
+
+But what if the browser is sending this one:
+
+     Accept-Encoding: deflate;q=1, gzip;q=0, identity;q=0.5, *;q=0.1
+
+     This would mean: "I prefer deflated content; I would rather take
+     uncompressed content than something I don't know anything about;
+     but I definitely cannot handle gzipped content."
+
+     The HTTP definitions says:
+     "If a parameter has a quality value of 0, then content with this parameter
+     is
+     'not acceptable' for the client."
+     
 TE header compatibility for HTTP/1.1 see rfc2616 14.39
 Local Cache Control features for NN and MSIE
 CGI/1.1 support + redirected request

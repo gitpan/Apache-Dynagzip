@@ -1,9 +1,14 @@
 Revision history for Perl extension Apache::Dynagzip.
 
+0.08  Sat Dec 07 23:15:00 2002
+	- bugfix. The bug was affecting the transmissions of plain static files only
+	  when gzip compression is turned off and light compression is turned on.
+	  
 0.07  Sun Aug 11 14:58:00 2002
 	- advanced control over the client/proxy cache is provided vith Vary extra value
 	  optionally inputed from the configuration file.
 	- documentation is edited.
+	  29819 Oct  6 14:16 Apache-Dynagzip-0.07.tar.gz
 
 0.06  Mon Jun 24 13:05:00 2002
 	- HTTP/1.0 bug is fixed. No chunks for HTTP/1.0 since now.
