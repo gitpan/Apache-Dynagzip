@@ -13,7 +13,7 @@ use Fcntl qw(:flock);
 use FileHandle;
 
 use vars qw($VERSION $BUFFERSIZE %ENV);
-$VERSION = "0.08";
+$VERSION = "0.09";
 $BUFFERSIZE = 16384;
 use constant MAGIC1	=> 0x1f ;
 use constant MAGIC2	=> 0x8b ;
@@ -100,7 +100,15 @@ sub chunkable { # call model: $var = chunkable($r);
 	#
 	my $r = shift;
 	my $result = undef;
-	if ($r->protocol =~ /http\/1\.(\d+)/io) {
+	# this is to downgrade to HTTP/1.0 for MSIE requests over SSL
+	# works in conjunction with this snippet from httpd.conf:
+	# SetEnvIf User-Agent ".*MSIE.*" \
+	# nokeepalive ssl-unclean-shutdown \
+	# downgrade-1.0 force-response-1.0
+	#
+	if ( $ENV{'downgrade-1.0'} or $ENV{'force-response-1.0'} ) {
+		$result = 0;
+	} elsif ($r->protocol =~ /http\/1\.(\d+)/io) {
 		# any HTTP/1.X is OK, just X==0 will be evaluated to FALSE in result
 		$result = $1;
 	}
@@ -1878,6 +1886,8 @@ for the content generation phase, providing wider service from one the same stat
 
 Thanks to Tom Evans, Valerio Paolini, and Serge Bizyayev for their valuable idea contributions and multiple testing.
 Thanks to Igor Sysoev and Henrik Nordstrom who helped me to understand better the HTTP/1.0 compression features.
+Thanks to Vlad Jebelev for the patch which helps to survive possible dynamic Apache downgrade from HTTP/1.1 to HTTP/1.0
+(especially serving MSIE request over SSL).
 
 Obviously, I hold the full responsibility for how all those contributions are used here.
 
@@ -2109,22 +2119,14 @@ supposed to be the last filter in the chain, because of the features of it's
 functions: It produces the full set of required HTTP headers followed by the gzipped
 content within the chunked stream.
 
-No one of other handlers in C<Filter> chain is allowed to issue
-
- $r->send_http_header();
-
-or
-
- $r->send_cgi_header();
-
 The only acceptable HTTP information from the old CGI applications is the C<Content-Type> CGI header
 which should be the first line followed by the empty line.
 This line is optional in accordance with the C<CGI/1.0> description, and many
 known old scripts ignore this option, which should default to C<Content-Type: text/html>.
-C<CGI/1.1> (see: http://cgi-spec.golux.com/draft-coar-cgi-v11-03-clean.html ) makes the life
-even more complicated for the system administrators.
+C<CGI/1.1> (see: http://cgi-spec.golux.com/draft-coar-cgi-v11-03-clean.html ) makes life
+even more complicated.
 
-This handler is partially CGI/1.1 compatible, except the internal redirect option, which is not guaranteed.
+This version of the handler is partially CGI/1.1 compatible, except the internal redirect option, which is not guaranteed.
 
 =head2 POST Request Features
 
@@ -2391,13 +2393,17 @@ This module requires these other modules and libraries:
         I didn't test this handler with previous versions of the Apache::Filter.
         Please, let me know if you have a chance to do that...
 
+It is strongly recomended to use Apache::CompressClientFixup handler to avoid compression
+for known buggy browsers. Apache::CompressClientFixup package can be found on CPAN at
+F<http://search.cpan.org/author/SLAVA/>.
+
 =head1 AUTHOR
 
 Slava Bizyayev E<lt>slava@cpan.orgE<gt> - Freelance Software Developer & Consultant.
 
 =head1 COPYRIGHT AND LICENSE
 
-I<Copyright (C) 2002 Slava Bizyayev. All rights reserved.>
+I<Copyright (C) 2002, 2003 Slava Bizyayev. All rights reserved.>
 
 This package is free software.
 You can use it, redistribute it, and/or modify it under the same terms as Perl itself.
@@ -2415,6 +2421,9 @@ C<Compress::Zlib> module can be found on CPAN.
 The primary site for the C<zlib> compression library is F<http://www.info-zip.org/pub/infozip/zlib/>.
 
 C<Apache::Filter> module can be found on CPAN.
+
+C<Apache::CompressClientFixup> module can be found on CPAN at
+F<http://search.cpan.org/author/SLAVA/>.
 
 F<http://www.ietf.org/rfc.html> - rfc search by number (+ index list)
 
