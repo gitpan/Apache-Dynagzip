@@ -3,6 +3,7 @@ package Apache::Dynagzip;
 use 5.004;
 use strict;
 use Apache::Constants qw(:response :methods :http);
+use Compress::LeadingBlankSpaces;
 use Compress::Zlib 1.16;
 use Apache::File;
 use Apache::Log ();
@@ -12,7 +13,7 @@ use Fcntl qw(:flock);
 use FileHandle;
 
 use vars qw($VERSION $BUFFERSIZE %ENV);
-$VERSION = "0.05";
+$VERSION = "0.06";
 $BUFFERSIZE = 16384;
 use constant MAGIC1	=> 0x1f ;
 use constant MAGIC2	=> 0x8b ;
@@ -35,12 +36,6 @@ sub can_gzip_for_this_client {
 		$result = 1; # true
 	}
 	# All known exceptions should go in here...
-	# From: Michael.Schroepl@telekurs.com To: mod_gzip@lists.over.net
-	# Netscape 4.79 is still failing to
-	# a) handle <script> referencing compressed JavaScript files
-	# b) handle <link>   referencing compressed CSS files
-	# c) display the source code of compressed HTML files
-	# d) print compressed HTML files
 	#
 	return $result;
 }
@@ -53,36 +48,34 @@ sub retrieve_all_cgi_headers_via { # call model: my $hdrs = retrieve_all_cgi_hea
 	}
 	return $headers;
 }
-sub squeeze_string { # status-less blank-space comression
-	my $buf = shift;
-	chop $buf;
-	while ($buf =~ /\r/o){
-		$buf =~ s/\r+//o;
-	}
-	$buf =~ s/^\s+(\S.*)/$1/;
-	while ($buf =~ /^\s/o){
-		$buf =~ s/^\s+//o;
-	}
-	return $buf ? $buf."\n" : '';
-}
+#sub squeeze_string { # status-less blank-space comression
+#	my $buf = shift;
+#	chop $buf;
+#	while ($buf =~ /\r/o){
+#		$buf =~ s/\r+//o;
+#	}
+#	$buf =~ s/^\s+(\S.*)/$1/;
+#	while ($buf =~ /^\s/o){
+#		$buf =~ s/^\s+//o;
+#	}
+#	return $buf ? $buf."\n" : '';
+#}
 sub send_lightly_compressed_stream { # call model: send_lightly_compressed_stream($r, $fh);
 	# Transfer the stream from filehandle $fh to standard output
 	# using "blank-space compression only...
 	#
 	my $r = shift;
 	my $fh = shift;
+	my $body = ''; # incoming content
 	my $buf;
+	my $lbr = Compress::LeadingBlankSpaces->new();
 	while (defined($buf = <$fh>)){
-		chop $buf;
-		while ($buf =~ /\r/o){
-			$buf =~ s/\r+//o;
+		if ($buf = $lbr->squeeze_string ($buf)) {
+			$body .= $buf;
+			print ($buf);
 		}
-		$buf =~ s/^\s+(\S.*)/$1/;
-		while ($buf =~ /^\s/o){
-			$buf =~ s/^\s+//o;
-		}
-		print ($buf."\n") if $buf;
 	}
+	return $body;
 }
 sub send_lightly_compressed_stream_chunked { # call model: send_lightly_compressed_stream_chunked($r, $fh, $minChSize);
 	# Transfer the stream chunked from filehandle $fh to standard output
@@ -94,16 +87,10 @@ sub send_lightly_compressed_stream_chunked { # call model: send_lightly_compress
 	my $body = ''; # incoming content
 	my $buf;
 	my $chunkBody = '';
+	my $lbr = Compress::LeadingBlankSpaces->new();
 
 	while (defined($buf = <$fh>)){
-		chop $buf;
-		while ($buf =~ /\r/o){
-			$buf =~ s/\r+//o;
-		}
-		$buf =~ s/^\s+(\S.*)/$1/;
-		while ($buf =~ /^\s/o){
-			$buf =~ s/^\s+//o;
-		}
+		$buf = $lbr->squeeze_string ($buf);
 		if (length($buf) > 0){
 			$chunkBody .= $buf;
 		}
@@ -119,6 +106,17 @@ sub send_lightly_compressed_stream_chunked { # call model: send_lightly_compress
 		$chunkBody = '';
 	}
 	return $body;
+}
+sub chunkable { # call model: $var = chunkable($r);
+	# Check if the response could be chunked
+	#
+	my $r = shift;
+	my $result = undef;
+	if ($r->protocol =~ /http\/1\.(\d+)/io) {
+		# any HTTP/1.X is OK, just X==0 will be evaluated to FALSE in result
+		$result = $1;
+	}
+	return $result;
 }
 sub chunk_out { # call model: my $chunk = chunk_out ($string);
 	my $HttpEol = "\015\012";  # HTTP end of line marker (see RFC 2068)
@@ -172,7 +170,7 @@ sub handler { # it is supposed to be only a dispatcher since now...
 	unless ($filter){
 		$binaryCGI = lc $r->dir_config('BinaryCGI') eq 'on';
 	}
-	# I assume the Light Compression Off is default:
+	# I assume the Light Compression Off as default:
 	my $light_compression = lc $r->dir_config('LightCompression') eq 'on';
 
 	# There are no way to compress and/or chunk the response to internally redirected request.
@@ -348,7 +346,7 @@ sub handler { # it is supposed to be only a dispatcher since now...
 	$r->log->info($qualifiedName.' is serving the main request for '.$r->the_request
 		.' targeting '.$r->filename.' via '.$r->uri.$message);
 	$r->header_out("X-Module-Sender" => __PACKAGE__);
-	$r->header_out('Transfer-Encoding','chunked'); # to overwrite the default Apache behavior...
+
 	# Client Local Cache Control (see rfc2068):
 	# The Expires entity-header field gives the date/time after which the response should be considered stale.
 	# A stale cache entry may not normally be returned by a cache (either a proxy cache or an user agent cache)
@@ -361,10 +359,475 @@ sub handler { # it is supposed to be only a dispatcher since now...
 	my $date_gmt = Apache::Util::ht_time($now, $time_format_gmt);
 	$r->header_out("Expires" => $date_gmt);
 
+my $can_chunk = chunkable($r); # check if it is HTTP/1.1 or higher
+unless ($can_chunk) {
+	# No chunks for HTTP/1.0. Close connection instead...
+	$r->header_out('Connection','close'); # for HTTP/1.0
+	$r->log->debug($qualifiedName.' is serving the main request in no-chunk mode for '.$r->the_request);
+	unless ($can_gzip) { # send plain content
+		# server-side cache control might be in effect, if ordered...
+		$r->log->info($qualifiedName.' no gzip for '.$r->the_request);
+		if ($filter) {
+			# create the filter-chain with no chunks...
+			$r = $r->filter_register;
+			$fh = $r->filter_input();
+			unless ($fh){
+				my $message = ' Fails to obtain the Filter data handle for ';
+				$r->log->error($qualifiedName.' aborts:'.$message.$r->filename);
+				return SERVER_ERROR;
+			}
+			my $headers = retrieve_all_cgi_headers_via ($fh);
+			$r->send_cgi_header($headers); # just for the case...
+			if ($r->header_only){
+				my $message = ' request for HTTP header only is done OK for ';
+				$r->log->info($qualifiedName.$message.$r->the_request);
+				return OK;
+			}
+			my $body = ''; # incoming content
+			if ($light_compression) {
+				$body = send_lightly_compressed_stream($r, $fh);
+			} else { # no light compression
+				while (<$fh>) {
+					$body .= $_ if $r->notes('ref_cache_files'); # accumulate all here
+					# to create the effective compression within the later stage,
+					# when the caching is ordered...
+					print ($_);
+				}
+			}
+			if ($r->notes('ref_cache_files')){
+				$r->notes('ref_source' => \$body);
+				$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
+			}
+			$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+			return OK;
+		} # if ($filter)
+
+		unless ($binaryCGI) { # Transfer a Plain File responding to the main request
+
+			unless (-e $r->finfo){
+				$r->log->error($qualifiedName.' aborts: file does not exist: '.$r->filename);
+				return NOT_FOUND;
+			}
+			if ($r->method_number != M_GET){
+				my $message = ' is not allowed for request targeting ';
+				$r->log->error($qualifiedName.' aborts: '.$r->method.$message.$r->filename);
+				return HTTP_METHOD_NOT_ALLOWED;
+			}
+			unless ($fh = Apache::File->new($r->filename)){
+				my $message = ' file permissions deny server access to ';
+				$r->log->error($qualifiedName.' aborts:'.$message.$r->filename);
+				return FORBIDDEN;
+			}
+			# since the file is opened successfully, I need to flock() it...
+			my $success = 0;
+			my $tries = 0;
+			while ($tries++ < MAX_ATTEMPTS_TO_TRY_FLOCK){
+				last if $success = flock ($fh, LOCK_SH|LOCK_NB);
+				$r->log->warn($qualifiedName.' is waiting for read flock of '.$r->filename);
+				sleep (1); # wait a second...
+			}
+			unless ($success){
+				$fh->close;
+				$r->log->error($qualifiedName.' aborts: Fails to obtain flock on '.$r->filename);
+				return SERVER_ERROR;
+			}
+			$r->send_http_header;
+			if ($r->header_only){
+				$r->log->info($qualifiedName.' request for header only is OK for ', $r->filename);
+				return OK;
+			}
+			my $body = ''; # incoming content
+			if ($light_compression) {
+				$body = send_lightly_compressed_stream($r, $fh);
+			} else { # no light compression
+				while (<$fh>) {
+					$body .= $_ if $r->notes('ref_cache_files'); # accumulate all here
+					# to create the effective compression within the later stage,
+					# when the caching is ordered...
+					print ($_);
+				}
+			}
+			$fh->close;
+
+			if ($r->notes('ref_cache_files')){
+				$r->notes('ref_source' => \$body);
+				$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
+			}
+			$r->log->warn($qualifiedName.' is done OK for '.$r->the_request.' targeted '.$r->filename);
+			return OK;
+		} # unless ($binaryCGI)
+
+		# It is Binary CGI to transfer with no gzip compression:
+		#
+		# double-check the target file's existance and access permissions:
+		unless (-e $r->finfo){
+			$r->log->error($qualifiedName.' aborts: file does not exist: '.$r->filename);
+			return NOT_FOUND;
+		}
+		my $filename = $r->filename();
+		unless (-f $filename and -x _ ) {
+			$r->log->error($qualifiedName.' aborts: no exec permissions for '.$r->filename);
+			return SERVER_ERROR;
+		}
+		$r->chdir_file();
+
+		# make %ENV appropriately:
+		my $gwi = 'CGI/1.1';
+		$ENV{GATEWAY_INTERFACE} = $gwi;
+		kill_over_env();
+
+		if ($r->method eq 'POST'){ # it NEVER has notes...
+			# POST features:
+			# since the stdin has a broken structure when passed through the perl-UNIX-pipe
+			# I emulate the appropriate GET request to the pp-binary...
+			delete($ENV{CONTENT_LENGTH});
+			delete($ENV{CONTENT_TYPE});
+			my $content = $r->content;
+			$ENV{QUERY_STRING} = $content;
+			$ENV{REQUEST_METHOD} = 'GET';
+		}
+		unless ($fh = FileHandle->new("$filename |")) {
+			$r->log->error($qualifiedName.' aborts: Fails to obtain incoming data handle for '.$r->filename);
+			return NOT_FOUND;
+		}
+		# lucky to proceed:
+		my $headers = retrieve_all_cgi_headers_via ($fh);
+		$r->send_cgi_header($headers);
+		if ($r->header_only){
+			$fh->close;
+			$r->log->warn($qualifiedName.' request for HTTP header only is done OK for '.$r->the_request);
+			return OK;
+		}
+		my $body = ''; # incoming content
+		if ($light_compression) {
+			local $\;
+			$body = send_lightly_compressed_stream($r, $fh);
+		} else { # no any compression, just chunked:
+			local $\;
+			my $chunkBody = '';
+			while (<$fh>) {
+				$body .= $_ if $r->notes('ref_cache_files'); # accumulate all here
+				# to create the effective compression within the later stage,
+				# when the caching is ordered...
+				print ($_);
+			}
+		}
+		$fh->close;
+
+		if ($r->notes('ref_cache_files')){
+			$r->notes('ref_source' => \$body);
+			$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
+		}
+		$r->log->info($qualifiedName.' is done OK for '.$r->the_request);
+		return OK;
+
+	} # unless ($can_gzip)
+
+	# Can gzip with no chunks:
+	$r->content_encoding('gzip');
+	$r->header_out('Vary','Accept-Encoding');
+
+	# retrieve settings from config:
+	my $minChunkSize = $r->dir_config('minChunkSize') || MIN_CHUNK_SIZE_DEFAULT;
+	my $minChunkSizeSource = $r->dir_config('minChunkSizeSource') || MIN_CHUNK_SIZE_SOURCE_DEFAULT;
+
+	if ($filter) {
+		$r = $r->filter_register;
+		$fh = $r->filter_input();
+		unless ($fh){
+			my $message = ' Fails to obtain the Filter data handle for ';
+			$r->log->error($qualifiedName.' aborts:'.$message.$r->filename);
+			return SERVER_ERROR;
+		}
+		if (cgi_headers_from_script($r)) {
+			my $headers = retrieve_all_cgi_headers_via ($fh);
+			$r->log->debug($qualifiedName.' has CGI-header(s): '.$headers.' from '.$r->filename);
+			$r->send_cgi_header($headers);
+		} else { # create the own set of HTTP headers:
+			$r->log->debug($qualifiedName.' creates own HTTP headers for '.$r->the_request);
+			$r->content_type("text/html");
+			$r->send_http_header;
+		}
+		if ($r->header_only){
+			$r->log->info($qualifiedName.' request for HTTP header only is done OK for '.$r->the_request);
+			return OK;
+		}
+		my $body = ''; # incoming content
+		# Create the deflation stream:
+		my ($gzip_handler, $status) = deflateInit(
+		     -Level      => Z_BEST_COMPRESSION(),
+		     -WindowBits => - MAX_WBITS(),);
+		unless ($status == Z_OK()){ # log the Error:
+			my $message = 'Cannot create a deflation stream. ';
+			$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+			return SERVER_ERROR;
+		}
+		# Create the first outgoing portion of the content:
+		my $gzipHeader = pack("c" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+		my $chunkBody = $gzipHeader; # this is just a portion to output this times...
+
+		my $partialSourceLength = 0;	# the length of the source
+						# associated with the portion gzipped in current chunk
+		my $lbr = Compress::LeadingBlankSpaces->new();
+		while (<$fh>) {
+			$_ = $lbr->squeeze_string($_) if $light_compression;
+			my $localPartialFlush = 0; # should be false default inside this loop
+			$body .= $_; # accumulate all here to create the effective compression
+				     # within the cleanup stage, when the caching is ordered...
+			$partialSourceLength += length($_); # to deside if the partial flush is required
+			if ($partialSourceLength > $minChunkSizeSource){
+				$localPartialFlush = 1; # just true
+				$partialSourceLength = 0; # for the next pass
+			}
+			my ($out, $status) = $gzip_handler->deflate(\$_);
+			if ($status == Z_OK){
+				$chunkBody .= $out; # it may bring nothing indeed...
+				$chunkBody .= $gzip_handler->flush(Z_PARTIAL_FLUSH) if $localPartialFlush;
+			} else { # log the Error:
+				$gzip_handler = undef; # clean it up...
+				my $message = 'Cannot gzip the Current Section. ';
+				$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+				return SERVER_ERROR;
+			}
+			if (length($chunkBody) > $minChunkSize ){ # send it...
+				print ($chunkBody);
+				$chunkBody = ''; # for the next iteration
+			}
+		}
+		$chunkBody .= $gzip_handler->flush();
+		$gzip_handler = undef; # clean it up...
+		# Append the checksum:
+		$chunkBody .= pack("V V", crc32(\$body), length($body));
+		print ($chunkBody);
+		$chunkBody = '';
+
+		if ($r->notes('ref_cache_files')){
+			$r->notes('ref_source' => \$body);
+			$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
+		}
+		$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+		return OK;
+	} # if ($filter)
+
+	unless ($binaryCGI) { # Transfer a Plain File gzipped, responding to the main request
+
+		unless (-e $r->finfo){
+			$r->log->error($qualifiedName.' aborts: file does not exist: '.$r->filename);
+			return NOT_FOUND;
+		}
+		if ($r->method_number != M_GET){
+			my $message = ' is not allowed for redirected request targeting ';
+			$r->log->error($qualifiedName.' aborts: '.$r->method.$message.$r->filename);
+			return HTTP_METHOD_NOT_ALLOWED;
+		}
+		unless ($fh = Apache::File->new($r->filename)){
+			my $message = ' file permissions deny server access to ';
+			$r->log->error($qualifiedName.' aborts:'.$message.$r->filename);
+			return FORBIDDEN;
+		}
+		# since the file is opened successfully, I need to flock() it...
+		my $success = 0;
+		my $tries = 0;
+		while ($tries++ < MAX_ATTEMPTS_TO_TRY_FLOCK){
+			last if $success = flock ($fh, LOCK_SH|LOCK_NB);
+			$r->log->warn($qualifiedName.' is waiting for read flock of '.$r->filename);
+			sleep (1); # wait a second...
+		}
+		unless ($success){
+			$fh->close;
+			$r->log->error($qualifiedName.' aborts: Fails to obtain flock on '.$r->filename);
+			return SERVER_ERROR;
+		}
+#		$r->content_type("text/html");
+		$r->send_http_header;
+		if ($r->header_only){
+			$r->log->info($qualifiedName.' request for header only is OK for ', $r->filename);
+			return OK;
+		}
+		# Create the deflation stream:
+		my ($gzip_handler, $status) = deflateInit(
+		     -Level      => Z_BEST_COMPRESSION(),
+		     -WindowBits => - MAX_WBITS(),);
+		unless ($status == Z_OK()){ # log the Error:
+			$fh->close; # and unlock...
+			my $message = 'Cannot create a deflation stream. ';
+			$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+			return SERVER_ERROR;
+		}
+		# Create the first outgoing portion of the content:
+		my $gzipHeader = pack("c" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+		my $chunkBody = $gzipHeader;
+
+		my $body = ''; # incoming content
+		my $partialSourceLength = 0; # the length of the source associated with the portion gzipped in current chunk
+		my $lbr = Compress::LeadingBlankSpaces->new();
+		while (<$fh>) {
+			$_ = $lbr->squeeze_string($_) if $light_compression;
+			my $localPartialFlush = 0; # should be false default inside this loop
+			$body .= $_;    # accumulate all here to create the effective compression within the cleanup stage,
+					# when the caching is ordered...
+			$partialSourceLength += length($_); # to deside if the partial flush is required
+			if ($partialSourceLength > $minChunkSizeSource){
+				$localPartialFlush = 1; # just true
+				$partialSourceLength = 0; # for the next pass
+			}
+			my ($out, $status) = $gzip_handler->deflate(\$_);
+			if ($status == Z_OK){
+				$chunkBody .= $out; # it may bring nothing indeed...
+				$chunkBody .= $gzip_handler->flush(Z_PARTIAL_FLUSH) if $localPartialFlush;
+			} else { # log the Error:
+				$fh->close; # and unlock...
+				$gzip_handler = undef; # clean it up...
+				my $message = 'Cannot gzip the Current Section. ';
+				$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+				return SERVER_ERROR;
+			}
+			if (length($chunkBody) > $minChunkSize ){ # send it...
+				print ($chunkBody);
+				$chunkBody = ''; # for the next iteration
+			}
+		}
+		$fh->close; # and unlock...
+		$chunkBody .= $gzip_handler->flush();
+		$gzip_handler = undef; # clean it up...
+		# Append the checksum:
+		$chunkBody .= pack("V V", crc32(\$body), length($body)) ;
+		print ($chunkBody);
+		$chunkBody = '';
+		if ($r->notes('ref_cache_files')){
+			$r->notes('ref_source' => \$body);
+			$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
+		}
+		$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+		return OK;
+	} # unless ($binaryCGI)
+
+	# It is Binary CGI to transfer with gzip compression:
+	#
+	# double-check the target file's existance and access permissions:
+	unless (-e $r->finfo){
+		$r->log->error($qualifiedName.' aborts: file does not exist: '.$r->filename);
+		return NOT_FOUND;
+	}
+	my $filename = $r->filename();
+	unless (-f $filename and -x _ ) {
+		$r->log->error($qualifiedName.' aborts: no exec permissions for '.$r->filename);
+		return SERVER_ERROR;
+	}
+	$r->chdir_file();
+
+	# make %ENV appropriately:
+	if ($r->notes('PP_PATH_TRANSLATED')){
+		$r->log->info($qualifiedName.' has notes: PP_PATH_TRANSLATED='.$r->notes('PP_PATH_TRANSLATED'));
+		my $gwi = 'CGI/1.1';
+		$ENV{GATEWAY_INTERFACE} = $gwi;
+		kill_over_env();
+
+		$ENV{QUERY_STRING} = $r->notes('PP_QUERY_STRING');
+		$ENV{SCRIPT_NAME} = $r->notes('PP_SCRIPT_NAME');
+		$ENV{DOCUMENT_NAME}='index.html';
+		$ENV{DOCUMENT_PATH_INFO}='';
+
+		$ENV{REQUEST_URI} = $ENV{SCRIPT_NAME}.'?'.$ENV{QUERY_STRING};
+		$ENV{PATH_INFO} = $r->notes('PP_PATH_INFO');
+		$ENV{DOCUMENT_URI} = $ENV{PATH_INFO};
+		$ENV{PATH_TRANSLATED} = $r->notes('PP_PATH_TRANSLATED');
+	} else {
+		$r->log->info($qualifiedName.' has no notes.');
+	}
+	if ($r->method eq 'POST'){ # it NEVER has notes...
+                my $gwi = 'CGI/1.1';
+                $ENV{GATEWAY_INTERFACE} = $gwi;
+		kill_over_env();
+
+		# POST features:
+		# since the stdin has a broken structure when passed through the perl-UNIX-pipe
+		# I emulate the appropriate GET request to the pp-binary...
+		delete($ENV{CONTENT_LENGTH});
+		delete($ENV{CONTENT_TYPE});
+		my $content = $r->content;
+		$ENV{QUERY_STRING} = $content;
+		$ENV{REQUEST_METHOD} = 'GET';
+	}
+	unless ($fh = FileHandle->new("$filename |")) {
+		$r->log->error($qualifiedName.' aborts: Fails to obtain incoming data handle for '.$r->filename);
+		return NOT_FOUND;
+	}
+	# lucky to proceed:
+	my $headers = retrieve_all_cgi_headers_via ($fh);
+	$r->send_cgi_header($headers);
+	if ($r->header_only){
+		$fh->close;
+		$r->log->info($qualifiedName.' request for HTTP header only is done OK for '.$r->the_request);
+		return OK;
+	}
+
+	# Create the deflation stream:
+	my ($gzip_handler, $status) = deflateInit(
+	     -Level      => Z_BEST_COMPRESSION(),
+	     -WindowBits => - MAX_WBITS(),);
+	unless ($status == Z_OK()){ # log the Error:
+		my $message = 'Cannot create a deflation stream. ';
+		$r->log->error($qualifiedName.' aborts: '.$message.'gzip status='.$status);
+		return SERVER_ERROR;
+	}
+	# Create the first outgoing portion of the content:
+	my $gzipHeader = pack("c" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+	my $chunkBody = $gzipHeader;
+	my $body = ''; # incoming content
+	my $partialSourceLength = 0; # the length of the source associated with the portion gzipped in current chunk
+
+	my $buf;
+	{
+	local $\;
+	my $lbr = Compress::LeadingBlankSpaces->new();
+	while (defined($buf = <$fh>)){
+		$buf = $lbr->squeeze_string($buf) if $light_compression;
+		next unless $buf;
+		$body .= $buf;
+		my $localPartialFlush = 0; # should be false default inside this loop
+		$partialSourceLength += length($buf); # to deside if the partial flush is required
+		if ($partialSourceLength > $minChunkSizeSource){
+			$localPartialFlush = 1; # just true
+			$partialSourceLength = 0; # for the next pass
+		}
+		my ($out, $status) = $gzip_handler->deflate(\$buf);
+		if ($status == Z_OK){
+			$chunkBody .= $out; # it may bring nothing indeed...
+			$chunkBody .= $gzip_handler->flush(Z_PARTIAL_FLUSH) if $localPartialFlush;
+		} else { # log the Error:
+			$fh->close;
+			$gzip_handler = undef; # clean it up...
+			$r->log->error($qualifiedName.' aborts: Cannot gzip this section. gzip status='.$status);
+			return SERVER_ERROR;
+		}
+		if (length($chunkBody) > $minChunkSize ){ # send it...
+			print ($chunkBody);
+			$chunkBody = ''; # for the next iteration
+		}
+	}
+	}
+	$fh->close;
+	$chunkBody .= $gzip_handler->flush();
+	$gzip_handler = undef; # clean it up...
+	# Append the checksum:
+	$chunkBody .= pack("V V", crc32(\$body), length($body)) ;
+	print ($chunkBody);
+	$chunkBody = '';
+	if ($r->notes('ref_cache_files')){
+		$r->notes('ref_source' => \$body);
+		$r->log->info($qualifiedName.' cache copy is referenced for '.$r->filename);
+	}
+	$r->log->info($qualifiedName.' is done OK for '.$r->filename);
+	return OK;
+
+} # unless ($can_chunk)
+
+	# This is HTTP/1.1 or higher:
+	$r->header_out('Transfer-Encoding','chunked'); # to overwrite the default Apache behavior...
 	unless ($can_gzip) {
-		# Send chunked content lightly compressed only, when the compression is ordered...
-		# The client-side cache control might be in effect, if ordered...
-		# The server-side cache control might be in effect, if ordered...
+		# Send chunked content, which might be lightly compressed only, when the compression is ordered...
+		# server-side cache control might be in effect, if ordered...
 		#
 		my $minChunkSizePP = $r->dir_config('minChunkSizePP') || MIN_CHUNK_SIZE_PP_DEFAULT;
 		$r->log->info($qualifiedName.' no gzip for '.$r->the_request
@@ -423,7 +886,7 @@ sub handler { # it is supposed to be only a dispatcher since now...
 				return NOT_FOUND;
 			}
 			if ($r->method_number != M_GET){
-				my $message = ' is not allowed for redirected request targeting ';
+				my $message = ' is not allowed for request targeting ';
 				$r->log->error($qualifiedName.' aborts: '.$r->method.$message.$r->filename);
 				return HTTP_METHOD_NOT_ALLOWED;
 			}
@@ -615,8 +1078,9 @@ sub handler { # it is supposed to be only a dispatcher since now...
 
 		my $partialSourceLength = 0;	# the length of the source
 						# associated with the portion gzipped in current chunk
+		my $lbr = Compress::LeadingBlankSpaces->new();
 		while (<$fh>) {
-			$_ = squeeze_string($_) if $light_compression;
+			$_ = $lbr->squeeze_string($_) if $light_compression;
 			my $localPartialFlush = 0; # should be false default inside this loop
 			$body .= $_; # accumulate all here to create the effective compression
 				     # within the cleanup stage, when the caching is ordered...
@@ -709,8 +1173,9 @@ sub handler { # it is supposed to be only a dispatcher since now...
 
 		my $body = ''; # incoming content
 		my $partialSourceLength = 0; # the length of the source associated with the portion gzipped in current chunk
+		my $lbr = Compress::LeadingBlankSpaces->new();
 		while (<$fh>) {
-			$_ = squeeze_string($_) if $light_compression;
+			$_ = $lbr->squeeze_string($_) if $light_compression;
 			my $localPartialFlush = 0; # should be false default inside this loop
 			$body .= $_;    # accumulate all here to create the effective compression within the cleanup stage,
 					# when the caching is ordered...
@@ -830,8 +1295,9 @@ sub handler { # it is supposed to be only a dispatcher since now...
 	my $buf;
 	{
 	local $\;
+	my $lbr = Compress::LeadingBlankSpaces->new();
 	while (defined($buf = <$fh>)){
-		$buf = squeeze_string($buf) if $light_compression;
+		$buf = $lbr->squeeze_string($buf) if $light_compression;
 		next unless $buf;
 		$body .= $buf;
 		my $localPartialFlush = 0; # should be false default inside this loop
@@ -879,37 +1345,35 @@ __END__
 
 =head1 NAME
 
-Apache::Dynagzip - mod_perl extension for C<Apache-1.3.X>. Version 0.05
+Apache::Dynagzip - mod_perl extension for C<Apache-1.3.X> to compress the response with C<gzip> format. Version 0.06
 
 =head1 ABSTRACT
 
-This Apache handler provides dynamic gzip compression within a chunked
-outgoing stream. The  implementation of this handler can compress outgoing
-HTML content by 3 to 20 times, while controlling the size of outgoing chunks,
-and the lifetime of the locally cached copy of the transferred document..
+This Apache handler provides dynamic content compression of outbound data stream
+for C<HTTP/1.0> and C<HTTP/1.1> requests.
+Standard C<gzip> compression is combined optionally with C<extra light> compression,
+which eliminates leading blank spaces and/or blank lines within the source document.
+This C<extra light> compression could be applied even when the client (browser)
+is not enabled to decompress C<gzip> format.
+
+The implementation of this handler helps to compress the outbound
+HTML content usually by 3 to 20 times, while controlling the size of outgoing chunks (for C<HTTP/1.1>),
+and the lifetime of the cached copy of the transferred document.
+Limited control over the proxy cache is provided.
 
 The handler can work within the C<Apache::Filter> chain as well as perform as
-a standalone handler for the content generation phase.
+a standalone handler for the content generation phase of the request processing.
 
-The standalone implementation of this handler can be especially helpful to
-transfer a huge static HTML file via a slow connection to the modern
-browser.  A major benefit is that the browser can begin to decompress the
-first part of the HTML file while the server is still compressing the
-remainder of the document.
-
-This handler is particularly useful for compressing outgoing Web content
+This handler is particularly useful for compressing outgoing web content
 which is dynamically generated on the fly (using templates, DB data, XML,
 etc.), when at the time of the request it is impossible to determine the
 length of the document to be transmitted. Support for Perl, Java, and C
 source generators is provided.
 
-Besides the benefits of reduced file size, this approach gains efficiency
-from being able to overlap the various phases of generation, compression,
+Besides the benefits of reduced document size, this approach gains efficiency
+from being able to overlap the various phases of data generation, compression,
 transmission, and decompression. In fact, the browser can start to
 decompress a document which has not yet been completely generated.
-
-The handler uses an internal buffer to accumulate a full chunk of data
-before transmission begins.
 
 =head1 SYNOPSIS
 
@@ -1305,7 +1769,7 @@ To overwrite them try for example
 
 Alternatively, you can control this handler from your own perl-written handler
 which is serving the earlier phase of the request processing.
-For example, I'm using the dynamical installation of the C<Apache::Dynagzip>
+For example, I'm using the dynamic installation of the C<Apache::Dynagzip>
 from my C<PerlTransHandler> to serve the HTML content cache appropriately.
 
   use Apache::RegistryFilter;
@@ -1326,30 +1790,36 @@ for example...
 
 =head2 Common Notes
 
-The combination of the HTTP headers
+Over C<HTTP/1.0> handler indicates the end of data stream by closing connection.
+Over C<HTTP/1.1> the outgoing data is compressed within a chunked outgoing stream,
+keeping the connection alive.
 
+The appropriate combination of the HTTP headers
+
+	X-Module-Sender: Apache::Dynagzip
 	Transfer-Encoding: chunked
 	Content-Encoding: gzip
 	Vary: Accept-Encoding
 
-will be in effect for all the cases where C<gzip> compression is applied.
+will be added to response when required.
 No HTTP header of the C<Content-Length> will be provided in any case...
 
 =head1 INTRODUCTION
 
 From a historical point of view this package was developed mainly to compress the output
 of a proprietary CGI binary written in C that was
-widely used by Outlook Technologies, Inc. to deliver dynamic HTML content over the Internet
-using HTTP/1.0 since the mid-'90s.
-We were then presented with the challenge of using the compression
-features of HTTP/1.1 on busy production servers, especially those serving heavy traffic on virtual hosts
-of popular American broadcasting clients.
+widely used by Outlook Technologies, Inc. to deliver uncompressed dynamically generated
+HTML content over the Internet using C<HTTP/1.0> since the mid-'90s.
+We were then presented with the challenge of using the content compression
+features over C<HTTP/1.1> on busy production servers, especially those serving heavy traffic on virtual hosts
+of popular American broadcasting companies.
 
 The very first our attempts to implement the static gzip approach to compress the
 dynamic content helped us to scale effectively the bandwidth of BBC backend
 by the cost of significantly increased latency of the content delivery.
 
-Actually, the delay of the content's download (up to the moment when the page
+Actually, in accordance with my own observations,
+the delay of the content's download (up to the moment when the page
 is able to run the onLoad() JavaScript) was not increased even on fast connections,
 and it was significantly decreased on dial-ups. Indeed, the BBC
 editors were not too happy to wait up to a minute sitting in front of the
@@ -1381,7 +1851,7 @@ of input or every time it had generated a certain amount of output?..>
 I<... So I am basically looking for anyone who has had any success in achieving this
 kind of "streaming" compression, who could direct me at an appropriate Apache module.">
 
-Unfortunately, the C<Apache::Dynagzip> has not yet been publicly available at that time...
+Unfortunately for him, the C<Apache::Dynagzip> has not yet been publicly available at that time...
 
 Since relesed this handler is the most useful when you need to compress the outgoing
 Web content, which is dynamically generated on the fly (using the templates,
@@ -1393,11 +1863,16 @@ of the compressed data when the very first portion of outgoing data is arrived f
 the main data source only, at the moment when probably the source big HTML document
 has not been generated in full yet. So far, the transmission will be done partly at the
 same time of the document creation. From other side, the internal buffer within the
-handler prevents the Apache from the creation of too short chunks.
+handler prevents the Apache from the creation of too short chunks (for C<HTTP/1.1>).
+
+In order to simplify the use of this handler on public/open_source sites,
+the content compression over HTTP/1.0 was added to this handler since the version 0.06.
+This implementation helps to avoid the dynamic invocation of the Apache handler
+for the content generation phase, providing wider service from one the same statically configured handler.
 
 =head1 DESCRIPTION
 
-The main pupose of this package is to serve the Content Generation Phase within the mod_perl enabled
+The main pupose of this package is to serve the C<content generation phase> within the mod_perl enabled
 C<Apache 1.3.X>, providing the dynamic on the fly compression of web content.
 It is done with the use of C<zlib> library via the C<Compress::Zlib> perl interface
 to serve the requests from those browsers, who understands C<gzip> format and can decompress this type
@@ -1406,30 +1881,35 @@ of data on the fly.
 In fact, this handler mainly serves as a kind of
 customizable filter of the HTML content for C<Apache 1.3.X>.
 It is supposed to be used in the C<Apache::Filter> chain mostly to serve the
-outgoing content dynamically generated on the fly by perl and/or Java.
+outgoing content dynamically generated on the fly by Perl and/or Java.
 It is featured to serve the regular CGI binaries (C-written for examle)
-as a standing along handler out of the C<Apache::Filter> chain.
+as a standalong handler out of the C<Apache::Filter> chain.
 As an extra option, this handler can be used to compress dynamically the huge static
-files, and to transfer the gzipped content in the form of chunked stream back to the
+files, and to transfer the gzipped content in the form of stream back to the
 client browser. For the last purpose the C<Apache::Dynagzip> handler should be used as
-a standing along handler out of the C<Apache::Filter> chain too.
+a standalong handler out of the C<Apache::Filter> chain too.
+
+Over C<HTTP/1.0> handler indicates the end of data stream by closing connection.
+Over C<HTTP/1.1> the outgoing data is compressed within a chunked outgoing stream,
+keeping the connection alive. Resonable control over the chunk-size is provided in this case.
 
 In order to serve better the older web clients (and known bugs within the modern ones)
-the "extra light" compression is provided independantly to remove leading blank spaces and/or blank lines
-from the outgoing web content. This "extra light" compression could be combined with
+the C<extra light> compression is provided independantly to remove leading blank spaces and/or blank lines
+from the outgoing web content. This C<extra light> compression could be combined with
 the main C<gzip> compression, when necessary.
 
 The list of the features of this approach includes:
 
- � Control over the size of content chunks generated and compressed on the fly.
+ � Control over the size of content chunks generated and compressed on the fly when using HTTP/1.1.
  � Support for any Perl, Java, or C/C++ CGI application to provide on-the-fly dynamic compression of outbound content.
  � Optional control over the duration of the content's life in client's local cache.
  � Controllable "extra light" compression for all browsers, including older ones that cannot decompress gzipped content.
  � Optional support for server-side caching of the dynamically generated content.
+ � Limited control over the proxy cache.
 
 =head2 Chunking Features
 
-This handler overwrites the default Apache behavior, and keeps the own control over the
+On C<HTTP/1.1> this handler overwrites the default Apache behavior, and keeps the own control over the
 chunk-size when it is possible. In fact, the handler provides the soft control over the chunk-size only:
 It does never cut the incoming string in order to create a chunk of a particular size.
 
@@ -1437,7 +1917,7 @@ In case of gzipped output the minimum size of the chunk is under the control of 
 
   minChunkSize
 
-In case of uncompressed output, or the "extra light" compression only,
+In case of uncompressed output, or the C<extra light> compression only,
 the minimum size of the chunk is under the control of internal variable
 
   minChunkSizePP
@@ -1452,33 +1932,38 @@ You may overwrite the default values of these variables in your C<httpd.conf> if
     Note: The internal variable minChunkSize should be treated carefully
           together with the minChunkSizeSource (see Compression Features).
 
-This handler does not keep the control over the chunk-size when it serves the internally redirected request.
+In this version handler does not keep the control over the chunk-size when it serves the internally redirected request.
 An appropriate warning is placed to C<error.log> in this case.
+
+In case of C<gzip> compressed response to C<HTTP/1.0> request, handler uses C<minChunkSize>
+and C<minChunkSizeSource> values to
+limit the minimum size of internal buffers in order
+to provide appropriate compression ratio, and to avoid multiple short outputs to the core Apache.
 
 =head2 Compression Features
 
 There are two types of compression, which could be applied to the outgoing content by this handler:
 
-  - "extra light" compression
+  - extra light compression
   - gzip compression
 
 in any appropriate combination.
 
-An C<extra light compression> is provided to remove leading blank spaces and/or blank lines
-from the outgoing web content. The implementation of C<extra light compression> is Off
-by default. It could be turned On with the statement
+An C<extra light> compression is provided to remove leading blank spaces and/or blank lines
+from the outgoing web content. The implementation of C<extra light> compression is turned off
+by default. It could be turned on with the statement
 
   PerlSetVar LightCompression On
 
-in your C<httpd.conf>. Any other value turns the C<extra light compression> Off.
+in your C<httpd.conf>. Any other value turns the C<extra light> compression off.
 
-A C<gzip> format is described in rfc1951 and rfc1952.
-This type of compression is applied when the client is recognized as being able
+C<gzip> format is described in rfc1952.
+This type of compression is applied when the client is recognized as a being able
 to decompress C<gzip> format on the fly. In this version the decision is under the control
 of whether the client sends the C<Accept-Encoding: gzip> HTTP header, or not. (Please,
 let me know if you have better idea about that...)
 
-Usually, when the C<gzip> compression is in effect, handler keeps the control
+On C<HTTP/1.1>, when the C<gzip> compression is in effect, handler keeps the control
 over the size of the chunks and over the compression ratio
 using two internal variables which could be set in your C<httpd.conf>:
 
@@ -1556,6 +2041,11 @@ In this version the handler provides defaults:
 
 for your convenience.
 
+In case of C<gzip> compressed response to C<HTTP/1.0> request, handler uses C<minChunkSize>
+and C<minChunkSizeSource> values to
+limit the minimum size of internal buffers in order
+to provide appropriate compression ratio, and to avoid multiple short outputs to the core Apache.
+
 =head2 Filter Chain Features
 
 As a member of the C<Apache::Filter> chain, the C<Apache::Dynagzip> handler is
@@ -1571,7 +2061,7 @@ or
 
 The only acceptable HTTP information from the old CGI applications is the C<Content-Type> CGI header
 which should be the first line followed by the empty line.
-It is optional in accordance with the C<CGI/1.0> description, and many
+This line is optional in accordance with the C<CGI/1.0> description, and many
 known old scripts ignore this option, which should default to C<Content-Type: text/html>.
 C<CGI/1.1> (see: http://cgi-spec.golux.com/draft-coar-cgi-v11-03-clean.html ) makes the life
 even more complicated for the system administrators.
@@ -1589,7 +2079,7 @@ It could cause a problem, when you have a huge incoming stream from your client 
 
 =head2 Control over the Client Cache
 
- (see rfc2068):
+The control over the lifetime of the response in client's cache is provided with C<Expires> HTTP header (see rfc2068):
 
 The Expires entity-header field gives the date/time after which the response should be considered stale.
 A stale cache entry may not normally be returned by a cache (either a proxy cache or an user agent cache)
@@ -1604,11 +2094,26 @@ of the request. The internal variable C<pageLifeTime> has default value
 
 which could be overwriten in C<httpd.conf>.
 
+Within the lifetime the client (browser) will
+not even try to access the server when you reach the same URL again.
+Instead, it restarts the page from the local cache.
+
+It's important to point out here, that all initial JavaScripts will be restarted indeed,
+so you can rotate your advertisements and dynamic content when needed.
+
+The second important point should be mentioned here: when you click the "Refresh" button, the
+browser will reload the page from the server unconditionally. This is right behavior,
+because it is exactly what the end-user expects from the "Refresh" button.
+
+  Note: the lifetime defined by Expires depends on accuracy of time settings on client
+        side. If your client's local clock is running 1 hour back, the cached copy of
+	the page will be alive 60 minutes longer on that machine.
+
 =head2 Support for the Server-Side Cache
 
 To support the Server-Side Cache I place the reference to the dynamically generated document to the C<notes()>
 when the Server-Side Cache Support is ordered. The referenced document could be already compressed with
-C<extra light compression>, if it was ordered for the current request.
+C<extra light> compression, if it was ordered for the current request.
 
 The effective C<gzip> compression is supposed to take place within the C<log> stage of the request processing.
 
@@ -1616,15 +2121,25 @@ From the historical point of view, the development of this handler was a stage o
 named C<Apache::ContentCache>, which is supposed to provide the content caching capabilities
 to the wide range of arbitrary sites, being generated on the fly for some reasons.
 In that project the C<Apache::Dynagzip> handler is used in the dynamically generated chain of Apache handlers
-for various phases of the request processing to filter the Content Generation Phase of the appropriate request.
+for various phases of the request processing to filter the content generation phase of the appropriate request.
 To be compatible with the C<Apache::ContentCache> flow chart, the C<Apache::Dynagzip> handler
 recognizes the optional reference in the C<notes()>, named C<ref_cache_files>.
 When the C<ref_cache_files> is defined within the C<notes()> table,
 the C<Apache::Dynagzip> handler creates one more reference named C<ref_source>
 within the C<notes()> to reference the full body of uncompressed incoming document
-for the Post Request Processing Phase.
+for the post request processing phase.
+
 You usually should not care about this feature of the C<Apache::Dynagzip> handler
 unless you use it in your own chain of handlers for the various phases of the request processing.
+
+=head2 Control over the Proxy Cache.
+
+Control over the possible proxy cache is provided with C<Vary> HTTP header (see rfc2068 for details).
+In this version the header is generated in form of
+
+	Vary: Accept-Encoding
+
+for the compressed output only.
 
 =head1 CUSTOMIZATION
 
@@ -1656,7 +2171,7 @@ To select the type of the content's source follow the rules:
  - it will be assumed the plain file transfer, when you use the standing-along handler with
    no BinaryCGI directive. The Document Content-Type is determined by Apache in this case.
 
-To control the compression ratio and the minimum size of the chunk for gzipped content
+To control the compression ratio and the minimum size of the chunk/buffer for gzipped content
 you can optionally use directives
 
     PerlSetVar minChunkSizeSource <value>
@@ -1674,19 +2189,19 @@ which are the default in this version. Indeed, you can use your own values, when
 
 Try to play with these values to find out your best combination!
 
-To control the minimum size of the chunk for uncompressed content you can optionally use the directive
+To control the minimum size of the chunk for uncompressed content over HTTP/1.1 you can optionally use the directive
 
     PerlSetVar minChunkSizePP <value>
 
-To control the C<extra light compression> you can optionally use the directive
+To control the C<extra light> compression you can optionally use the directive
 
     PerlSetVar LightCompression <On/Off>
 
-To turn On the C<extra light compression> you can use the directive
+To turn On the C<extra light> compression you can use the directive
 
     PerlSetVar LightCompression On
 
-Any other value turns the C<extra light compression> Off (default).
+Any other value turns the C<extra light> compression Off (default).
 
 To control the C<pageLifeTime> in client's local cache you can optionally use the directive
 
@@ -1703,29 +2218,10 @@ is default in this version.
 This handler fails to keep the control over the chunk-size when it serves the internally redirected request.
 The same time it fails to provide the C<gzip> compression.
 A corresponding warning is placed to C<error.log> in this case.
-Make the appropriate configuration tuning to avoid the implementation of this handler for internally redirected request(s).
+Make the appropriate configuration tunings to avoid the implementation of this handler for internally redirected request(s).
 
 The handler logs C<error>, C<warn>, C<info>, and C<debug> messages to the Apache C<error.log> file.
 Please, read it first in case of any trouble.
-
-  ============================== Known Problems ==============================
-
-Q: When I press "refresh" on my IE6 browser, the page is getting corrupted!
-
-A: Unfortunately, IE6 (and perhaps earlier versions?) appears to have a bug
-with gzip over SSL where the first 2048 characters are not included in the
-HTML rendering of the page when refresh is pressed. It only seems to happen
-on longish pages, and not when the page is first loaded. In fact, sometimes
-it doesn't happen at all. The only current solution is to put a 2048
-character comment at the start of your longish pages of all spaces (which
-compresses pretty well, fortunately).
-
- From: Michael.Schroepl@telekurs.com To: mod_gzip@lists.over.net
- # Netscape 4.79 is still failing to
- # a) handle <script> referencing compressed JavaScript files
- # b) handle <link>   referencing compressed CSS files
- # c) display the source code of compressed HTML files
- # d) print compressed HTML files
 
 =head1 DEPENDENCIES
 
@@ -1740,6 +2236,7 @@ This module requires these other modules and libraries:
    Fcntl;
    FileHandle;
 
+   Compress::LeadingBlankSpaces;
    Compress::Zlib 1.16;
        
   Note: the Compress::Zlib 1.16 requires the Info-zip zlib 1.0.2 or better
@@ -1761,14 +2258,27 @@ I<Copyright (C) 2002 Slava Bizyayev. All rights reserved.>
   You can use it, redistribute it, and/or modify it under the same terms as Perl itself.
   The latest version of this module can be found on CPAN.
 
+=head1 ACKNOWLEDGMENTS
+
+Thanks to Tom Evans, Valerio Paolini, and Serge Bizyayev for their valuable idea contributions and multiple testing.
+Thanks to Igor Sysoev and Henrik Nordstrom who helped me with HTTP/1.0 compression features.
+
+Indeed, I hold the full responsibility for how all those contributions are used here.
+
 =head1 SEE ALSO
 
 C<mod_perl> at F<http://perl.apache.org>
+
+C<Compress::LeadingBlankSpaces> module can be found on CPAN.
 
 C<Compress::Zlib> module can be found on CPAN.
 
 The primary site for the C<zlib> compression library is F<http://www.info-zip.org/pub/infozip/zlib/>.
 
 C<Apache::Filter> module can be found on CPAN.
+
+F<http://www.ietf.org/rfc.html> - rfc search by number (+ index list)
+
+F<http://cgi-spec.golux.com/draft-coar-cgi-v11-03-clean.html> CGI/1.1 rfc
 
 =cut

@@ -1,7 +1,15 @@
 Revision history for Perl extension Apache::Dynagzip.
 
+0.06  Mon Jun 24 13:05:00 2002
+	- HTTP/1.0 bug is fixed. No chunks for HTTP/1.0 since now.
+	  Just no Content-Length, and Connection: close instead.
+	  gzip compression is provided for HTTP/1.0 in accordance with Accept-Encoding.
+	- light compression exception for <PRE>...</PRE> tag is implemented.
+	- documentation is edited appropriately. 
+
 0.05  Sat Jun 15 18:00:00 2002
-	- Makefile.PL is fixed in order to pass CPAN tests
+	- Makefile.PL is fixed in order to survive CPAN tests
+	  25110 Jun 15 18:28 Apache-Dynagzip-0.05.tar.gz
 
 0.04  Mon Jun 03 14:00:00 2002
 	- README is updated.

@@ -3,53 +3,52 @@ Apache/Dynagzip version 0.05
 
 =head1 Apache::Dynagzip
 
-- mod_perl extension for C<Apache-1.3.X>. Version 0.05
+- mod_perl extension for C<Apache-1.3.X> to compress the response with C<gzip> format. Version 0.06
 
 =head1 ABSTRACT
 
-This Apache handler provides dynamic gzip compression within a chunked
-outgoing stream. The  implementation of this handler can compress outgoing
-HTML content by 3 to 20 times, while controlling the size of outgoing chunks,
-and the lifetime of the locally cached copy of the transferred document..
+This Apache handler provides dynamic content compression of outbound data stream
+for C<HTTP/1.0> and C<HTTP/1.1> requests.
+Standard C<gzip> compression is combined optionally with C<extra light> compression,
+which eliminates leading blank spaces and/or blank lines within the source document.
+This C<extra light> compression could be applied even when the client (browser)
+is not enabled to decompress C<gzip> format.
+
+The implementation of this handler helps to compress the outbound
+HTML content usually by 3 to 20 times, while controlling the size of outgoing chunks (for C<HTTP/1.1>),
+and the lifetime of the cached copy of the transferred document.
+Limited control over the proxy cache is provided.
 
 The handler can work within the C<Apache::Filter> chain as well as perform as
-a standalone handler for the content generation phase.
+a standalone handler for the content generation phase of the request processing.
 
-The standalone implementation of this handler can be especially helpful to
-transfer a huge static HTML file via a slow connection to the modern
-browser.  A major benefit is that the browser can begin to decompress the
-first part of the HTML file while the server is still compressing the
-remainder of the document.
-
-This handler is particularly useful for compressing outgoing Web content
+This handler is particularly useful for compressing outgoing web content
 which is dynamically generated on the fly (using templates, DB data, XML,
 etc.), when at the time of the request it is impossible to determine the
 length of the document to be transmitted. Support for Perl, Java, and C
 source generators is provided.
 
-Besides the benefits of reduced file size, this approach gains efficiency
-from being able to overlap the various phases of generation, compression,
+Besides the benefits of reduced document size, this approach gains efficiency
+from being able to overlap the various phases of data generation, compression,
 transmission, and decompression. In fact, the browser can start to
 decompress a document which has not yet been completely generated.
-
-The handler uses an internal buffer to accumulate a full chunk of data
-before transmission begins.
 
 =head1 INTRODUCTION
 
 From a historical point of view this package was developed mainly to compress the output
 of a proprietary CGI binary written in C that was
-widely used by Outlook Technologies, Inc. to deliver dynamic HTML content over the Internet
-using HTTP/1.0 since the mid-'90s.
-We were then presented with the challenge of using the compression
-features of HTTP/1.1 on busy production servers, especially those serving heavy traffic on virtual hosts
-of popular American broadcasting clients.
+widely used by Outlook Technologies, Inc. to deliver uncompressed dynamically generated
+HTML content over the Internet using C<HTTP/1.0> since the mid-'90s.
+We were then presented with the challenge of using the content compression
+features over C<HTTP/1.1> on busy production servers, especially those serving heavy traffic on virtual hosts
+of popular American broadcasting companies.
 
 The very first our attempts to implement the static gzip approach to compress the
 dynamic content helped us to scale effectively the bandwidth of BBC backend
 by the cost of significantly increased latency of the content delivery.
 
-Actually, the delay of the content's download (up to the moment when the page
+Actually, in accordance with my own observations,
+the delay of the content's download (up to the moment when the page
 is able to run the onLoad() JavaScript) was not increased even on fast connections,
 and it was significantly decreased on dial-ups. Indeed, the BBC
 editors were not too happy to wait up to a minute sitting in front of the
@@ -81,7 +80,7 @@ of input or every time it had generated a certain amount of output?..>
 I<... So I am basically looking for anyone who has had any success in achieving this
 kind of "streaming" compression, who could direct me at an appropriate Apache module.">
 
-Unfortunately, the C<Apache::Dynagzip> has not yet been publicly available at that time...
+Unfortunately for him, the C<Apache::Dynagzip> has not yet been publicly available at that time...
 
 Since relesed this handler is the most useful when you need to compress the outgoing
 Web content, which is dynamically generated on the fly (using the templates,
@@ -93,11 +92,16 @@ of the compressed data when the very first portion of outgoing data is arrived f
 the main data source only, at the moment when probably the source big HTML document
 has not been generated in full yet. So far, the transmission will be done partly at the
 same time of the document creation. From other side, the internal buffer within the
-handler prevents the Apache from the creation of too short chunks.
+handler prevents the Apache from the creation of too short chunks (for C<HTTP/1.1>).
+
+In order to simplify the use of this handler on public/open_source sites,
+the content compression over HTTP/1.0 was added to this handler since the version 0.06.
+This implementation helps to avoid the dynamic invocation of the Apache handler
+for the content generation phase, providing wider service from one the same statically configured handler.
 
 =head1 DESCRIPTION
 
-The main pupose of this package is to serve the Content Generation Phase within the mod_perl enabled
+The main pupose of this package is to serve the C<content generation phase> within the mod_perl enabled
 C<Apache 1.3.X>, providing the dynamic on the fly compression of web content.
 It is done with the use of C<zlib> library via the C<Compress::Zlib> perl interface
 to serve the requests from those browsers, who understands C<gzip> format and can decompress this type
@@ -106,30 +110,35 @@ of data on the fly.
 In fact, this handler mainly serves as a kind of
 customizable filter of the HTML content for C<Apache 1.3.X>.
 It is supposed to be used in the C<Apache::Filter> chain mostly to serve the
-outgoing content dynamically generated on the fly by perl and/or Java.
+outgoing content dynamically generated on the fly by Perl and/or Java.
 It is featured to serve the regular CGI binaries (C-written for examle)
-as a standing along handler out of the C<Apache::Filter> chain.
+as a standalong handler out of the C<Apache::Filter> chain.
 As an extra option, this handler can be used to compress dynamically the huge static
-files, and to transfer the gzipped content in the form of chunked stream back to the
+files, and to transfer the gzipped content in the form of stream back to the
 client browser. For the last purpose the C<Apache::Dynagzip> handler should be used as
-a standing along handler out of the C<Apache::Filter> chain too.
+a standalong handler out of the C<Apache::Filter> chain too.
+
+Over C<HTTP/1.0> handler indicates the end of data stream by closing connection.
+Over C<HTTP/1.1> the outgoing data is compressed within a chunked outgoing stream,
+keeping the connection alive. Resonable control over the chunk-size is provided in this case.
 
 In order to serve better the older web clients (and known bugs within the modern ones)
-the "extra light" compression is provided independantly to remove leading blank spaces and/or blank lines
-from the outgoing web content. This "extra light" compression could be combined with
+the C<extra light> compression is provided independantly to remove leading blank spaces and/or blank lines
+from the outgoing web content. This C<extra light> compression could be combined with
 the main C<gzip> compression, when necessary.
 
 The list of the features of this approach includes:
 
- � Control over the size of content chunks generated and compressed on the fly.
+ � Control over the size of content chunks generated and compressed on the fly when using HTTP/1.1.
  � Support for any Perl, Java, or C/C++ CGI application to provide on-the-fly dynamic compression of outbound content.
  � Optional control over the duration of the content's life in client's local cache.
  � Controllable "extra light" compression for all browsers, including older ones that cannot decompress gzipped content.
  � Optional support for server-side caching of the dynamically generated content.
+ � Limited control over the proxy cache.
 
 =head2 Chunking Features
 
-This handler overwrites the default Apache behavior, and keeps the own control over the
+On C<HTTP/1.1> this handler overwrites the default Apache behavior, and keeps the own control over the
 chunk-size when it is possible. In fact, the handler provides the soft control over the chunk-size only:
 It does never cut the incoming string in order to create a chunk of a particular size.
 
@@ -137,7 +146,7 @@ In case of gzipped output the minimum size of the chunk is under the control of 
 
   minChunkSize
 
-In case of uncompressed output, or the "extra light" compression only,
+In case of uncompressed output, or the C<extra light> compression only,
 the minimum size of the chunk is under the control of internal variable
 
   minChunkSizePP
@@ -152,33 +161,38 @@ You may overwrite the default values of these variables in your C<httpd.conf> if
     Note: The internal variable minChunkSize should be treated carefully
           together with the minChunkSizeSource (see Compression Features).
 
-This handler does not keep the control over the chunk-size when it serves the internally redirected request.
+In this version handler does not keep the control over the chunk-size when it serves the internally redirected request.
 An appropriate warning is placed to C<error.log> in this case.
+
+In case of C<gzip> compressed response to C<HTTP/1.0> request, handler uses C<minChunkSize>
+and C<minChunkSizeSource> values to
+limit the minimum size of internal buffers in order
+to provide appropriate compression ratio, and to avoid multiple short outputs to the core Apache.
 
 =head2 Compression Features
 
 There are two types of compression, which could be applied to the outgoing content by this handler:
 
-  - "extra light" compression
+  - extra light compression
   - gzip compression
 
 in any appropriate combination.
 
-An C<extra light compression> is provided to remove leading blank spaces and/or blank lines
-from the outgoing web content. The implementation of C<extra light compression> is Off
-by default. It could be turned On with the statement
+An C<extra light> compression is provided to remove leading blank spaces and/or blank lines
+from the outgoing web content. The implementation of C<extra light> compression is turned off
+by default. It could be turned on with the statement
 
   PerlSetVar LightCompression On
 
-in your C<httpd.conf>. Any other value turns the C<extra light compression> Off.
+in your C<httpd.conf>. Any other value turns the C<extra light> compression off.
 
-A C<gzip> format is described in rfc1951 and rfc1952.
-This type of compression is applied when the client is recognized as being able
+C<gzip> format is described in rfc1952.
+This type of compression is applied when the client is recognized as a being able
 to decompress C<gzip> format on the fly. In this version the decision is under the control
 of whether the client sends the C<Accept-Encoding: gzip> HTTP header, or not. (Please,
 let me know if you have better idea about that...)
 
-Usually, when the C<gzip> compression is in effect, handler keeps the control
+On C<HTTP/1.1>, when the C<gzip> compression is in effect, handler keeps the control
 over the size of the chunks and over the compression ratio
 using two internal variables which could be set in your C<httpd.conf>:
 
@@ -256,6 +270,11 @@ In this version the handler provides defaults:
 
 for your convenience.
 
+In case of C<gzip> compressed response to C<HTTP/1.0> request, handler uses C<minChunkSize>
+and C<minChunkSizeSource> values to
+limit the minimum size of internal buffers in order
+to provide appropriate compression ratio, and to avoid multiple short outputs to the core Apache.
+
 =head2 Filter Chain Features
 
 As a member of the C<Apache::Filter> chain, the C<Apache::Dynagzip> handler is
@@ -271,7 +290,7 @@ or
 
 The only acceptable HTTP information from the old CGI applications is the C<Content-Type> CGI header
 which should be the first line followed by the empty line.
-It is optional in accordance with the C<CGI/1.0> description, and many
+This line is optional in accordance with the C<CGI/1.0> description, and many
 known old scripts ignore this option, which should default to C<Content-Type: text/html>.
 C<CGI/1.1> (see: http://cgi-spec.golux.com/draft-coar-cgi-v11-03-clean.html ) makes the life
 even more complicated for the system administrators.
@@ -289,7 +308,7 @@ It could cause a problem, when you have a huge incoming stream from your client 
 
 =head2 Control over the Client Cache
 
- (see rfc2068):
+The control over the lifetime of the response in client's cache is provided with C<Expires> HTTP header (see rfc2068):
 
 The Expires entity-header field gives the date/time after which the response should be considered stale.
 A stale cache entry may not normally be returned by a cache (either a proxy cache or an user agent cache)
@@ -304,11 +323,26 @@ of the request. The internal variable C<pageLifeTime> has default value
 
 which could be overwriten in C<httpd.conf>.
 
+Within the lifetime the client (browser) will
+not even try to access the server when you reach the same URL again.
+Instead, it restarts the page from the local cache.
+
+It's important to point out here, that all initial JavaScripts will be restarted indeed,
+so you can rotate your advertisements and dynamic content when needed.
+
+The second important point should be mentioned here: when you click the "Refresh" button, the
+browser will reload the page from the server unconditionally. This is right behavior,
+because it is exactly what the end-user expects from the "Refresh" button.
+
+  Note: the lifetime defined by Expires depends on accuracy of time settings on client
+        side. If your client's local clock is running 1 hour back, the cached copy of
+	the page will be alive 60 minutes longer on that machine.
+
 =head2 Support for the Server-Side Cache
 
 To support the Server-Side Cache I place the reference to the dynamically generated document to the C<notes()>
 when the Server-Side Cache Support is ordered. The referenced document could be already compressed with
-C<extra light compression>, if it was ordered for the current request.
+C<extra light> compression, if it was ordered for the current request.
 
 The effective C<gzip> compression is supposed to take place within the C<log> stage of the request processing.
 
@@ -316,15 +350,25 @@ From the historical point of view, the development of this handler was a stage o
 named C<Apache::ContentCache>, which is supposed to provide the content caching capabilities
 to the wide range of arbitrary sites, being generated on the fly for some reasons.
 In that project the C<Apache::Dynagzip> handler is used in the dynamically generated chain of Apache handlers
-for various phases of the request processing to filter the Content Generation Phase of the appropriate request.
+for various phases of the request processing to filter the content generation phase of the appropriate request.
 To be compatible with the C<Apache::ContentCache> flow chart, the C<Apache::Dynagzip> handler
 recognizes the optional reference in the C<notes()>, named C<ref_cache_files>.
 When the C<ref_cache_files> is defined within the C<notes()> table,
 the C<Apache::Dynagzip> handler creates one more reference named C<ref_source>
 within the C<notes()> to reference the full body of uncompressed incoming document
-for the Post Request Processing Phase.
+for the post request processing phase.
+
 You usually should not care about this feature of the C<Apache::Dynagzip> handler
 unless you use it in your own chain of handlers for the various phases of the request processing.
+
+=head2 Control over the Proxy Cache.
+
+Control over the possible proxy cache is provided with C<Vary> HTTP header (see rfc2068 for details).
+In this version the header is generated in form of
+
+	Vary: Accept-Encoding
+
+for the compressed output only.
 
 =head1 INSTALLATION
 
@@ -386,7 +430,7 @@ To select the type of the content's source follow the rules:
  - it will be assumed the plain file transfer, when you use the standing-along handler with
    no BinaryCGI directive. The Document Content-Type is determined by Apache in this case.
 
-To control the compression ratio and the minimum size of the chunk for gzipped content
+To control the compression ratio and the minimum size of the chunk/buffer for gzipped content
 you can optionally use directives
 
     PerlSetVar minChunkSizeSource <value>
@@ -404,19 +448,19 @@ which are the default in this version. Indeed, you can use your own values, when
 
 Try to play with these values to find out your best combination!
 
-To control the minimum size of the chunk for uncompressed content you can optionally use the directive
+To control the minimum size of the chunk for uncompressed content over HTTP/1.1 you can optionally use the directive
 
     PerlSetVar minChunkSizePP <value>
 
-To control the C<extra light compression> you can optionally use the directive
+To control the C<extra light> compression you can optionally use the directive
 
     PerlSetVar LightCompression <On/Off>
 
-To turn On the C<extra light compression> you can use the directive
+To turn On the C<extra light> compression you can use the directive
 
     PerlSetVar LightCompression On
 
-Any other value turns the C<extra light compression> Off (default).
+Any other value turns the C<extra light> compression Off (default).
 
 To control the C<pageLifeTime> in client's local cache you can optionally use the directive
 
@@ -441,6 +485,7 @@ This module requires these other modules and libraries:
    Fcntl;
    FileHandle;
 
+   Compress::LeadingBlankSpaces;
    Compress::Zlib 1.16;
        
   Note: the Compress::Zlib 1.16 requires the Info-zip zlib 1.0.2 or better

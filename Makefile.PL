@@ -13,6 +13,7 @@ WriteMakefile(
 				'Apache::Util' => '0',
 				'Fcntl' => '0',
 				'FileHandle' => '0',
+				'Compress::LeadingBlankSpaces' => '0',
 				'Compress::Zlib' => '1.16',
 			   }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?    ## Add these new keywords supported since 5.005
