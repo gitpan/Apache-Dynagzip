@@ -2,6 +2,7 @@ Changes
 Dynagzip.pm
 Makefile.PL
 MANIFEST
+META.yml
 README
 TODO
 test.pl

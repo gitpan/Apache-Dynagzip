@@ -13,7 +13,7 @@ use Fcntl qw(:flock);
 use FileHandle;
 
 use vars qw($VERSION $BUFFERSIZE %ENV);
-$VERSION = "0.15";
+$VERSION = "0.16";
 $BUFFERSIZE = 16384;
 use constant MAGIC1	=> 0x1f ;
 use constant MAGIC2	=> 0x8b ;
@@ -697,7 +697,7 @@ unless ($can_chunk) {
 			$r->log->error($qualifiedName.' aborts: Fails to obtain flock on '.$r->filename);
 			return SERVER_ERROR;
 		}
-#		$r->content_type("text/html") unless $r->header_out('Content-Type');
+		$r->content_type("text/html") unless $r->content_type;
 		$r->send_http_header;
 		if ($r->header_only){
 			$r->log->info($qualifiedName.' request for header only is OK for ', $r->filename);
@@ -1249,7 +1249,8 @@ unless ($can_chunk) {
 			$r->log->error($qualifiedName.' aborts: Fails to obtain flock on '.$r->filename);
 			return SERVER_ERROR;
 		}
-		$r->content_type("text/html") unless $r->header_out('Content-Type');
+#		$r->content_type("text/html") unless $r->header_out('Content-Type'); # It was a BUG
+		$r->content_type("text/html") unless defined $r->content_type;
 		$r->send_http_header;
 		if ($r->header_only){
 			$r->log->info($qualifiedName.' request for header only is OK for ', $r->filename);
@@ -2395,6 +2396,13 @@ you may use C<Apache::Filter> chain to serve another sources, when you know what
 You might wish to write your own handler and include it into C<Apache::Filter> chain,
 preprocessing the outgoing stream if necessary.
 
+In order to use your own handler (that might be generating its own HTTP headers)
+inside the Apache::Filter chain, make sure to register your handler with the Apache::Filter chain like
+
+  $r->filter_register();
+
+when necessary. See Apache::Filter documentation for details.
+
 =head2 CGI-Compatible Binary
 
 Use the directives like
@@ -2605,9 +2613,15 @@ This module requires these other modules and libraries:
    Compress::LeadingBlankSpaces;
    Compress::Zlib 1.16;
        
-  Note: the Compress::Zlib 1.16 requires the Info-zip zlib 1.0.2 or better
+  Note 1: the Compress::Zlib 1.16 requires the Info-zip zlib 1.0.2 or better
         (it is NOT compatible with versions of zlib <= 1.0.1).
         The zlib compression library is available at http://www.gzip.org/zlib/
+	
+  note 2: it is recommended to have a mod_perl compiled with the EVERYTHING=1
+        switch. However, Apache::Dynagzip uses just fiew phases of the request
+        processing flow:
+              Content generation phase
+              Logging phase
 
 It is strongly recommended to use C<Apache::CompressClientFixup> handler in order to avoid compression
 for known buggy browsers. C<Apache::CompressClientFixup> package can be found on CPAN at
@@ -2619,7 +2633,7 @@ Slava Bizyayev E<lt>slava@cpan.orgE<gt> - Freelance Software Developer & Consult
 
 =head1 COPYRIGHT AND LICENSE
 
-I<Copyright (C) 2002 - 2004 Slava Bizyayev. All rights reserved.>
+I<Copyright (C) 2002 - 2004, Slava Bizyayev. All rights reserved.>
 
 This package is free software.
 You can use it, redistribute it, and/or modify it under the same terms as Perl itself.

@@ -1,19 +1,29 @@
 Revision history for Apache::Dynagzip
 
+0.16  Sat Oct 09 19:30:00 2004
+	- bugfix. Content-Type was overwritten to default text/html during the streaming of a static
+	  file because $r->header_out('Content-Type') was not set, however $r->content_type is set
+	  properly in PerlLibTreeTrans URI_Translation_Handler. Fixed in two places.
+	- documentation was lightly edited, especially regarding the details of module installation
+	  and appropriate mod_perl configuration. Thanks to Kevin Austin for the hints.
+	- README was reformatted back to plain text.
+	- META.yml was created manually and added to MANIFEST.
+
 0.15  Sun May 02 15:11:00 2004
 	- clean up: Dan Kubb has found some inconsistences in implementation of UseCGIHeadersFromScript
 	  within the Filter chain. Documentation and the code were cleaned up in order to make sure
 	  that UseCGIHeadersFromScript does not affect functionality inside the  Filter chain.
+	  23843 May 11 00:28 Apache-Dynagzip-0.15.tar.gz
 
 0.14  Sat Apr 24 22:50:00 2004
 	- documentation was edited in order to make it more clear, especially
-	  regarding previous code dhanges.
+	  regarding previous code changes.
 	  23642 Apr 30 21:15 Apache-Dynagzip-0.14.tar.gz
 
 0.13  Mon Apr 05 22:40:00 2004
 	- bugfix. Richard Chen discovered the unconditional retrievement of HTTP headers
-	  inside the brench of uncompressed response over HTTP/1.1 for filter chain. The same
-	  bug appears inside the brench of uncompressed response over HTTP/1.0. Fixed now.
+	  inside the branch of uncompressed response over HTTP/1.1 for filter chain. The same
+	  bug appears inside the branch of uncompressed response over HTTP/1.0. Fixed now.
 	  31466 Apr  6 00:01 Apache-Dynagzip-0.13.tar.gz
 
 0.12  Mon Mar 15 21:15:00 2004
