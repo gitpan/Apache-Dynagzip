@@ -1,0 +1,87 @@
+05/28/02
+========
+CGI/1.1 support
+Log the Compression Ratio
+Serve the Lost Connection
+Dynamic control via notes() over the
+ - pageLifeTime
+ - minChunkSize
+ - minChunkSizeSource
+ - minChunkSizePP
+ - etc.
+
+02/20/02
+========
+From: 	gs-lists-mod_gzip@gluelogic.com
+To: 	mod_gzip@lists.over.net
+
+Microsoft has a tendency to IGNORE the HTTP headers and to "detect" the
+document type itself.  e.g. I could send a MIME type of image/gif, but
+if the content is HTML, some versions of IE will display it as HTML
+rather than trying to decode it as GIF.  This might seem like a good thing
+to you, but it was the cause of a large security hole some months ago.
+
+Along with the Microsoft detection "feature", Microsoft tends to read the
+HTTP META tags in the document (not the headers), and sometimes actually
+listens to them.
+
+Therefore, defensive programming and web publishing suggests that you should
+duplicate important header tags such as Vary in the HTTP header AND in the
+HTML document <head> section.
+
+-Glenn
+===========================================================================
+From: 	Brian Aker <brian@tangent.org>
+To: 	mod_gzip@lists.over.net
+
+I am running into a problem with mod_gzip. If I try to use it with
+pages that get data via a POST request the POST data is not found. Now I
+know this probably is tied in how the subrequests are being done in
+mod_gzip.
+I just want mod_gzip to ignore requests that are POST requests. Is there
+an option to do this? I can hack it into the source easily enough but I
+would be just as happy to have this as an option.
+
+-Brian
+===========================================================================
+From: =?iso-8859-1?Q?Nicholas_Oxh=F8j?= <nicholas-modperl@oxhoej.dk>
+To: <modperl@apache.org>
+Subject: "Streaming" compression of output from mod_perl handler?
+Date: Tue, 19 Feb 2002 09:01:34 +0100
+
+There also seems to be an issue about the new HTTP/1.1 "chunked" transfer-encoding. For instance, mod_gzip will not compress chunked output, unless you allow it to "dechunk" it by collecting all the output and compressing it as one big block.
+
+So I am basically looking for anyone who has had any success in achieving this kind of "streaming" compression, who could direct me at an appropriate Apache module.
+
+Nicholas Oxhøj
+===========================================================================
+Nicholas Oxhøj is discussing the mod_deflate with  Igor Sysoev <is@rambler-co.ru>:
+
+I just tried using $r->rflush in my handler and it works perfectly :-)
+The output gets rendered on the fly and it barely hurts the compression ratio. The 430 KB gets compressed to 26 KB instead of 24.5 KB :-) :-)
+
+But wouldn't it be nice to have some mod_deflate option where you could specify that mod_deflate should flush and send the currently compressed output every time it had received a certain amount of input or every time it had generated a certain amount of output.
+
+We are, for instance, using a template module to generate the output. We just give the template module a data structure and a template, and it then goes away and fills in the template, outputting HTML. This means that we don't have any easy way of calling flush at certain So we don't have any easy way of calling rflush once in a while.
+
+Of course we might just modify or substitute the template module, but it seems like a more "automatic" kind of "streaming" deflating (like described above) would be nice to have.
+
+Nicholas Oxhøj
+
+Igor Sysoev:
+
+It's complicates things.
+Besides Apache never flushes output on timeout or amount of content -
+it flushes only if you ask it.
+
+> We are, for instance, using a template module to generate the output. We just give the template module a data structure and a template, and it then goes away and fills in the template, outputting HTML. This means that we don't have any easy way of calling flush at certain So we don't have any easy way of calling rflush once in a while.
+> Of course we might just modify or substitute the template module, but it seems like a more "automatic" kind of "streaming" deflating (like described above) would be nice to have.
+
+You can set $|=1 as Eagle book says:
+
+This method [r->flush()] is also called automatically after each
+print() if the Perl global variable $| is nonzero. 
+
+Igor Sysoev
+===========================================================================
+

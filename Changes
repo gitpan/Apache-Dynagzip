@@ -1,0 +1,24 @@
+Revision history for Perl extension Apache::Dynagzip.
+
+0.04  Mon Jun 03 14:00:00 2002
+	- README is updated.
+	- Some typos in main doc fixed.
+
+0.03  Sun May 26 14:26:00 2002
+	- fundamental revision of the code to avoid possible copyright questions from the Outlook Technologies, Inc.
+	  My own decision to publish the code on CPAN could never be considered a kind of competition with OLT
+	  business, since my layoff clearly demonstrate the fact that OLT has no business interests
+	  in this market of products and services, and does not plan to work on this market in future.
+	- documentation is edited appropriately.
+	  23002 Jun  3 12:17 Apache-Dynagzip-0.03.tar.gz
+
+0.02  Fri Mar 22 12:07
+	- documentation is edited - thanks to Tom Evans <tevans@outlook.net> for README Abstract.
+	  11169 Apr 27 13:16 Apache-Dynagzip-0.02.tar.gz
+
+0.01  Mon Jan 14 10:31:52 2002
+	- original version; created by h2xs 1.21 with options
+		-A -X -n Apache::Dynagzip
+	- original code is created.
+	  10312 Mar 18 23:20 Apache-Dynagzip-0.01.tar.gz
+
