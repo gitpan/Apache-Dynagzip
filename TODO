@@ -1,7 +1,4 @@
-05/28/02
-========
 Content-Encoding with q=  header.
-Extended control over Vary for Client-dependent content.
 TE header compatibility for HTTP/1.1 see rfc2616 14.39
 Local Cache Control features for NN and MSIE
 CGI/1.1 support + redirected request
@@ -9,14 +6,16 @@ Log the Compression Ratio
 Serve the Lost Connection.
 
 I'm not sure that
-Dynamic control via notes() over the
+Dynamic control over the
  - pageLifeTime
  - minChunkSize
  - minChunkSizeSource
  - minChunkSizePP
  - etc.
-is much better, than dynamic setup of appropriate conf variables...
+via notes() is much better, than
+dynamic setup of appropriate conf variables...
 
+===========================================================================
 
 02/20/02
 ========
@@ -44,8 +43,30 @@ To: <modperl@apache.org>
 Subject: "Streaming" compression of output from mod_perl handler?
 Date: Tue, 19 Feb 2002 09:01:34 +0100
 
-So I am basically looking for anyone who has had any success in achieving this kind of "streaming" compression, who could direct me at an appropriate Apache module.
+So I am basically looking for anyone who has had any success in achieving this kind of "streaming" compression,
+who could direct me at an appropriate Apache module.
 
 Nicholas Oxhøj
 ===========================================================================
+From: 	Michael.Schroepl@telekurs.de
+To: 	mod_gzip@lists.over.net
+Date: Thu, 8 Aug 2002 19:54:33 +0200
+
+Subject: Antwort: [Mod_gzip] Some IE 5.5 Browsers refusing to compress /
+	 should we force compression?
+
+b) foreign proxy servers that filter out "Accept-Encoding"
+   from HTTP requests because they want to cache content
+   and know that they would run into trouble if confronted
+   with negotiated (= potentially compressed) content,
+   especially because mod_gzip still doesn't even send a
+   "Vary:" header to warn these proxies.
+
+Suggested reading:
+  http://www.schroepl.net/projekte/msie/
+  - visit this page with different browser settings.
+
+Greetings, Michael
+===========================================================================
+
 

@@ -13,7 +13,7 @@ use Fcntl qw(:flock);
 use FileHandle;
 
 use vars qw($VERSION $BUFFERSIZE %ENV);
-$VERSION = "0.06";
+$VERSION = "0.07";
 $BUFFERSIZE = 16384;
 use constant MAGIC1	=> 0x1f ;
 use constant MAGIC2	=> 0x8b ;
@@ -48,18 +48,6 @@ sub retrieve_all_cgi_headers_via { # call model: my $hdrs = retrieve_all_cgi_hea
 	}
 	return $headers;
 }
-#sub squeeze_string { # status-less blank-space comression
-#	my $buf = shift;
-#	chop $buf;
-#	while ($buf =~ /\r/o){
-#		$buf =~ s/\r+//o;
-#	}
-#	$buf =~ s/^\s+(\S.*)/$1/;
-#	while ($buf =~ /^\s/o){
-#		$buf =~ s/^\s+//o;
-#	}
-#	return $buf ? $buf."\n" : '';
-#}
 sub send_lightly_compressed_stream { # call model: send_lightly_compressed_stream($r, $fh);
 	# Transfer the stream from filehandle $fh to standard output
 	# using "blank-space compression only...
@@ -358,6 +346,13 @@ sub handler { # it is supposed to be only a dispatcher since now...
 	my $time_format_gmt = '%A, %d-%B-%Y %H:%M:%S %Z';
 	my $date_gmt = Apache::Util::ht_time($now, $time_format_gmt);
 	$r->header_out("Expires" => $date_gmt);
+
+	# Advanced control over the client/proxy Cache:
+	#
+	my $extra_vary = $r->dir_config('Vary');
+	my $current_vary = $r->header_out("Vary");
+	my $new_vary = join (',',$current_vary,$extra_vary);
+	$r->header_out("Vary" => $new_vary) if $extra_vary;
 
 my $can_chunk = chunkable($r); # check if it is HTTP/1.1 or higher
 unless ($can_chunk) {
@@ -1041,6 +1036,13 @@ unless ($can_chunk) {
 	#
 	$r->header_out('Vary','Accept-Encoding');
 
+	# Advanced control over the client/proxy Cache:
+	#
+	my $extra_vary = $r->dir_config('Vary');
+	my $current_vary = $r->header_out("Vary");
+	my $new_vary = join (',',$current_vary,$extra_vary);
+	$r->header_out("Vary" => $new_vary) if $extra_vary;
+
 	if ($filter) {
 		$r = $r->filter_register;
 		$fh = $r->filter_input();
@@ -1345,24 +1347,20 @@ __END__
 
 =head1 NAME
 
-Apache::Dynagzip - mod_perl extension for C<Apache-1.3.X> to compress the response with C<gzip> format. Version 0.06
+Apache::Dynagzip - mod_perl extension for C<Apache-1.3.X> to compress the response with C<gzip> format.
 
 =head1 ABSTRACT
 
-This Apache handler provides dynamic content compression of outbound data stream
+This Apache handler provides dynamic content compression of the response data stream
 for C<HTTP/1.0> and C<HTTP/1.1> requests.
-Standard C<gzip> compression is combined optionally with C<extra light> compression,
+
+Standard C<gzip> compression is optionally combined with C<extra light> compression,
 which eliminates leading blank spaces and/or blank lines within the source document.
 This C<extra light> compression could be applied even when the client (browser)
-is not enabled to decompress C<gzip> format.
+is not capable to decompress C<gzip> format.
 
-The implementation of this handler helps to compress the outbound
-HTML content usually by 3 to 20 times, while controlling the size of outgoing chunks (for C<HTTP/1.1>),
-and the lifetime of the cached copy of the transferred document.
-Limited control over the proxy cache is provided.
-
-The handler can work within the C<Apache::Filter> chain as well as perform as
-a standalone handler for the content generation phase of the request processing.
+This handler helps to compress the outbound
+HTML content usually by 3 to 20 times, and provides a list of useful features.
 
 This handler is particularly useful for compressing outgoing web content
 which is dynamically generated on the fly (using templates, DB data, XML,
@@ -1765,7 +1763,7 @@ To overwrite them try for example
   == Latency = 0.170 seconds, Extra Delay = 0.110 seconds
   == Restored Body was 1862 bytes ==
 
-=head2 Dynamic Setup from the Perl Code
+=head2 Dynamic Setup/Configuration from the Perl Code
 
 Alternatively, you can control this handler from your own perl-written handler
 which is serving the earlier phase of the request processing.
@@ -1838,6 +1836,10 @@ goals effectively. Even later in
 February 2002 Nicholas Oxhøj wrote to the mod_perl mailing list about his
 experience to find the Apache gzipper for the streaming outgoing content:
 
+=over 4
+
+=item 
+
 I<"... I have been experimenting with all the different Apache compression modules
 I have been able to find, but have not been able to get the desired result.
 I have tried Apache::GzipChain, Apache::Compress, mod_gzip and mod_deflate, with
@@ -1850,6 +1852,8 @@ of input or every time it had generated a certain amount of output?..>
 
 I<... So I am basically looking for anyone who has had any success in achieving this
 kind of "streaming" compression, who could direct me at an appropriate Apache module.">
+
+=back
 
 Unfortunately for him, the C<Apache::Dynagzip> has not yet been publicly available at that time...
 
@@ -1870,17 +1874,27 @@ the content compression over HTTP/1.0 was added to this handler since the versio
 This implementation helps to avoid the dynamic invocation of the Apache handler
 for the content generation phase, providing wider service from one the same statically configured handler.
 
+=head2 Acknowledgments
+
+Thanks to Tom Evans, Valerio Paolini, and Serge Bizyayev for their valuable idea contributions and multiple testing.
+Thanks to Igor Sysoev and Henrik Nordstrom who helped me to understand better the HTTP/1.0 compression features.
+
+Obviously, I hold the full responsibility for how all those contributions are used here.
+
 =head1 DESCRIPTION
 
 The main pupose of this package is to serve the C<content generation phase> within the mod_perl enabled
 C<Apache 1.3.X>, providing the dynamic on the fly compression of web content.
 It is done with the use of C<zlib> library via the C<Compress::Zlib> perl interface
-to serve the requests from those browsers, who understands C<gzip> format and can decompress this type
-of data on the fly.
+to serve both C<HTTP/1.0> and C<HTTP/1.1> requests from those clients/browsers,
+who understands C<gzip> format and can decompress this type of data on the fly.
 
+This handler does never C<gzip> content for those clients/browsers,
+who fails to declare the ability to decompress C<gzip> format.
 In fact, this handler mainly serves as a kind of
-customizable filter of the HTML content for C<Apache 1.3.X>.
-It is supposed to be used in the C<Apache::Filter> chain mostly to serve the
+customizable filter of outbound web content for C<Apache 1.3.X>.
+
+This handler is supposed to be used in the C<Apache::Filter> chain mostly to serve the
 outgoing content dynamically generated on the fly by Perl and/or Java.
 It is featured to serve the regular CGI binaries (C-written for examle)
 as a standalong handler out of the C<Apache::Filter> chain.
@@ -1889,58 +1903,46 @@ files, and to transfer the gzipped content in the form of stream back to the
 client browser. For the last purpose the C<Apache::Dynagzip> handler should be used as
 a standalong handler out of the C<Apache::Filter> chain too.
 
-Over C<HTTP/1.0> handler indicates the end of data stream by closing connection.
-Over C<HTTP/1.1> the outgoing data is compressed within a chunked outgoing stream,
+Working over the C<HTTP/1.0> this handler indicates the end of data stream by closing connection.
+Indeed, over C<HTTP/1.1> the outgoing data is compressed within a chunked outgoing stream,
 keeping the connection alive. Resonable control over the chunk-size is provided in this case.
 
-In order to serve better the older web clients (and known bugs within the modern ones)
-the C<extra light> compression is provided independantly to remove leading blank spaces and/or blank lines
+In order to serve better the older web clients
+the C<extra light> compression is provided independently to remove
+unnecessary leading blank spaces and/or blank lines
 from the outgoing web content. This C<extra light> compression could be combined with
 the main C<gzip> compression, when necessary.
 
-The list of the features of this approach includes:
+The list of features of this handler includes:
 
- · Control over the size of content chunks generated and compressed on the fly when using HTTP/1.1.
- · Support for any Perl, Java, or C/C++ CGI application to provide on-the-fly dynamic compression of outbound content.
- · Optional control over the duration of the content's life in client's local cache.
- · Controllable "extra light" compression for all browsers, including older ones that cannot decompress gzipped content.
- · Optional support for server-side caching of the dynamically generated content.
- · Limited control over the proxy cache.
+=over 4
 
-=head2 Chunking Features
+=item ·
+Support for both HTTP/1.0 and HTTP/1.1 requests.
 
-On C<HTTP/1.1> this handler overwrites the default Apache behavior, and keeps the own control over the
-chunk-size when it is possible. In fact, the handler provides the soft control over the chunk-size only:
-It does never cut the incoming string in order to create a chunk of a particular size.
+=item ·
+Reasonable control over the size of content chunks for HTTP/1.1.
 
-In case of gzipped output the minimum size of the chunk is under the control of internal variable
+=item ·
+Support for Perl, Java, or C/C++ CGI applications in order to provide dynamic on-the-fly compression of outbound content.
 
-  minChunkSize
+=item ·
+Optional C<extra light> compression for all browsers, including older ones that incapable to decompress gzipped content.
 
-In case of uncompressed output, or the C<extra light> compression only,
-the minimum size of the chunk is under the control of internal variable
+=item ·
+Optional control over the duration of the content's life in client/proxy local cache.
 
-  minChunkSizePP
+=item ·
+Limited control over the proxy caching.
 
-In this version for your convenience the handler provides defaults:
+=item ·
+Optional support for server-side caching of dynamically generated content.
 
-  minChunkSize = 8
-  minChunkSizePP = 8192
-
-You may overwrite the default values of these variables in your C<httpd.conf> if necessary.
-
-    Note: The internal variable minChunkSize should be treated carefully
-          together with the minChunkSizeSource (see Compression Features).
-
-In this version handler does not keep the control over the chunk-size when it serves the internally redirected request.
-An appropriate warning is placed to C<error.log> in this case.
-
-In case of C<gzip> compressed response to C<HTTP/1.0> request, handler uses C<minChunkSize>
-and C<minChunkSizeSource> values to
-limit the minimum size of internal buffers in order
-to provide appropriate compression ratio, and to avoid multiple short outputs to the core Apache.
+=back
 
 =head2 Compression Features
+
+C<Apache::Dynagzip> provides content compression for both C<HTTP/1.0> and C<HTTP/1.1> when appropriate.
 
 There are two types of compression, which could be applied to the outgoing content by this handler:
 
@@ -1950,22 +1952,22 @@ There are two types of compression, which could be applied to the outgoing conte
 in any appropriate combination.
 
 An C<extra light> compression is provided to remove leading blank spaces and/or blank lines
-from the outgoing web content. The implementation of C<extra light> compression is turned off
+from the outgoing web content. It is supposed to serve the ASCII data types like C<html>,
+C<JavaScript>, C<css>, etc. The implementation of C<extra light> compression is turned off
 by default. It could be turned on with the statement
 
   PerlSetVar LightCompression On
 
 in your C<httpd.conf>. Any other value turns the C<extra light> compression off.
 
-C<gzip> format is described in rfc1952.
-This type of compression is applied when the client is recognized as a being able
+The main C<gzip> format is described in rfc1952.
+This type of compression is applied when the client is recognized as capable
 to decompress C<gzip> format on the fly. In this version the decision is under the control
-of whether the client sends the C<Accept-Encoding: gzip> HTTP header, or not. (Please,
-let me know if you have better idea about that...)
+of whether the client sends the C<Accept-Encoding: gzip> HTTP header, or not.
 
-On C<HTTP/1.1>, when the C<gzip> compression is in effect, handler keeps the control
+On C<HTTP/1.1>, when the C<gzip> compression is in effect, handler keeps the resonable control
 over the size of the chunks and over the compression ratio
-using two internal variables which could be set in your C<httpd.conf>:
+using the combination of two internal variables which could be set in your C<httpd.conf>:
 
   minChunkSizeSource
   minChunkSize
@@ -1973,9 +1975,15 @@ using two internal variables which could be set in your C<httpd.conf>:
 The C<minChunkSizeSource> defines the minimum length of the source stream which C<zlib> may
 accumulate in its internal buffer.
 
-  Note: The compression ratio depends on the length of the data,
-        accumulated in that buffer; More data we keep over there
-	- better ratio will be achieved...
+=over 4
+
+=item Note:
+
+The compression ratio depends on the length of the data,
+accumulated in that buffer;
+More data we keep over there - better ratio will be achieved...
+
+=back
 
 When the length defined by the C<minChunkSizeSource> is exceeded, the handler flushes the
 internal buffer of C<zlib> and transfers the accumulated portion of the compreesed data
@@ -2004,7 +2012,7 @@ in my C<httpd.conf> to compress the dynamically generated content of the size of
   C05 --> S06 Host: devl4.outlook.net
   C05 --> S06 Accept-Charset: ISO-8859-1
   == Body was 0 bytes ==
-
+  
   ## Sockets 6 of 4,5,6 need checking ##
   C05 <-- S06 HTTP/1.1 200 OK
   C05 <-- S06 Date: Thu, 21 Feb 2002 20:01:47 GMT
@@ -2030,7 +2038,13 @@ This chunk was sent as soon as the handler received the first portion of the dat
 generated by the foreign CGI script. The data itself at that moment has been
 storied in the zlib's internal buffer, because the C<minChunkSizeSource> is big enough.
 
-  Note: Longer we allow zlib to keep its internal buffer - better compression ratio it makes for us...
+=over 4
+
+=item Note:
+
+Longer we allow zlib to keep its internal buffer - better compression ratio it makes for us...
+
+=back
 
 So far, in this example we have obtained the compression ratio at about 9 times.
 
@@ -2040,6 +2054,48 @@ In this version the handler provides defaults:
   minChunkSize = 8
 
 for your convenience.
+
+In case of C<gzip> compressed response to C<HTTP/1.0> request, handler uses C<minChunkSize>
+and C<minChunkSizeSource> values to
+limit the minimum size of internal buffers in order
+to provide appropriate compression ratio, and to avoid multiple short outputs to the core Apache.
+
+=head2 Chunking Features
+
+On C<HTTP/1.1> this handler overwrites the default Apache behavior, and keeps the own control over the
+chunk-size when it is possible. In fact, handler provides the soft control over the chunk-size only:
+It does never cut the incoming string in order to create a chunk of a particular size.
+Instead, it controls the minimum size of the chunk only.
+I consider this approach reasonable, because to date the HTTP chunk-size is not coordinated with the
+packet-size on transport level.
+
+In case of gzipped output the minimum size of the chunk is under the control of internal variable
+
+  minChunkSize
+
+In case of uncompressed output, or the C<extra light> compression only,
+the minimum size of the chunk is under the control of internal variable
+
+  minChunkSizePP
+
+In this version for your convenience the handler provides defaults:
+
+  minChunkSize = 8
+  minChunkSizePP = 8192
+
+You may overwrite the default values of these variables in your C<httpd.conf> if necessary.
+
+=over 4
+
+=item Note:
+
+The internal variable C<minChunkSize> should be treated carefully
+together with the C<minChunkSizeSource> (see Compression Features).
+
+=back
+
+In this version handler does not keep the control over the chunk-size when it serves the internally redirected request.
+An appropriate warning is placed to C<error.log> in this case.
 
 In case of C<gzip> compressed response to C<HTTP/1.0> request, handler uses C<minChunkSize>
 and C<minChunkSizeSource> values to
@@ -2056,7 +2112,9 @@ content within the chunked stream.
 No one of other handlers in C<Filter> chain is allowed to issue
 
  $r->send_http_header();
+
 or
+
  $r->send_cgi_header();
 
 The only acceptable HTTP information from the old CGI applications is the C<Content-Type> CGI header
@@ -2105,9 +2163,15 @@ The second important point should be mentioned here: when you click the "Refresh
 browser will reload the page from the server unconditionally. This is right behavior,
 because it is exactly what the end-user expects from the "Refresh" button.
 
-  Note: the lifetime defined by Expires depends on accuracy of time settings on client
-        side. If your client's local clock is running 1 hour back, the cached copy of
-	the page will be alive 60 minutes longer on that machine.
+=over 4
+
+=item Note:
+
+the lifetime defined by Expires depends on accuracy of time settings on client
+side. If your client's local clock is running 1 hour back, the cached copy of
+the page will be alive 60 minutes longer on that machine.
+
+=back
 
 =head2 Support for the Server-Side Cache
 
@@ -2134,12 +2198,77 @@ unless you use it in your own chain of handlers for the various phases of the re
 
 =head2 Control over the Proxy Cache.
 
-Control over the possible proxy cache is provided with C<Vary> HTTP header (see rfc2068 for details).
-In this version the header is generated in form of
+Control over the possible proxy cache is provided with C<Vary>
+HTTP header (see rfc2068 for details).
+In this version the header is always generated in form of
 
-	Vary: Accept-Encoding
+=over 4
 
-for the compressed output only.
+=item C<Vary: Accept-Encoding>
+
+=back
+
+for gzipped output only.
+
+Advanced control over the proxy cache is provided since the version 0.07
+with optional extension of Vary HTTP header.
+This extension could be placed into your configuration file, using directive
+
+=over 4
+
+=item C<PerlSetVar Vary E<lt>valueE<gt>>
+
+=back
+
+Particularly, it might be helpful to indicate the content, which depends on some conditions,
+other than just compression features.
+For example, when the content is personalized, someone might wish to use
+the * C<Vary> extension to prevent any proxy caching.
+
+When the outgoing content is gzipped, this extension will be appended to the regular C<Vary> header,
+like in the following example:
+
+Using the following fragment within the C<http.conf>:
+
+  PerlModule Apache::Dynagzip
+  <Files ~ "*\.html">
+    SetHandler perl-script
+    PerlHandler Apache::Dynagzip
+    PerlSetVar LightCompression On
+    PerlSetVar Vary *
+  </Files>
+
+We observe the client-side log in form of:
+
+  C05 --> S06 GET /devdoc/Dynagzip/Dynagzip.html HTTP/1.1
+  C05 --> S06 Accept: */*
+  C05 --> S06 Referer: http://devl4.outlook.net/devdoc/Dynagzip/
+  C05 --> S06 Accept-Language: en-us
+  C05 --> S06 Accept-Encoding: gzip, deflate
+  C05 --> S06 User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows 98)
+  C05 --> S06 Host: devl4.outlook.net
+  C05 --> S06 Pragma: no-cache
+  C05 --> S06 Accept-Charset: ISO-8859-1
+  == Body was 0 bytes ==
+  
+  C05 <-- S06 HTTP/1.1 200 OK
+  C05 <-- S06 Date: Sun, 11 Aug 2002 21:28:43 GMT
+  C05 <-- S06 Server: Apache/1.3.22 (Unix) Debian GNU/Linux mod_perl/1.26
+  C05 <-- S06 X-Module-Sender: Apache::Dynagzip
+  C05 <-- S06 Expires: Sunday, 11-August-2002 21:33:43 GMT
+  C05 <-- S06 Vary: Accept-Encoding,*
+  C05 <-- S06 Transfer-Encoding: chunked
+  C05 <-- S06 Content-Type: text/html; charset=iso-8859-1
+  C05 <-- S06 Content-Encoding: gzip
+  C05 <-- S06 == Incoming Body was 11311 bytes ==
+  == Transmission: text gzip chunked ==
+  == Chunk Log ==
+  a (hex) = 10 (dec)
+  1c78 (hex) = 7288 (dec)
+  f94 (hex) = 3988 (dec)
+  0 (hex) = 0 (dec)
+  == Latency = 0.160 seconds, Extra Delay = 0.170 seconds
+  == Restored Body was 47510 bytes ==
 
 =head1 CUSTOMIZATION
 
@@ -2150,26 +2279,32 @@ by this handler.
 
 To select the type of the content's source follow the rules:
 
- - use Apache::Filter Chain to serve any Perl, or Java generated content. When your source
-   is a very old CGI-application, which fails to provide the Content-Type CGI header, use
+=over 4
+
+=item 
+
+- use C<Apache::Filter> chain to serve any Perl, or Java generated content. When your source
+is a very old CGI-application, which fails to provide the Content-Type CGI header, use
 
     PerlSetVar UseCGIHeadersFromScript Off
 
-   in your httpd.conf to overwrite the Document Content-Type to default text/html.
+in your httpd.conf to overwrite the Document Content-Type to default text/html.
 
- - you may use Apache::Filter Chain to serve another sources, when you know what you are doing.
-   You might wish to write your own handler and include it into Apache::Filter Chain,
-   emulating the CGI outgoing stream.
+you may use C<Apache::Filter> chain to serve another sources, when you know what you are doing.
+You might wish to write your own handler and include it into C<Apache::Filter> chain,
+emulating the CGI outgoing stream.
  
- - use the directive
+- use the directive
 
     PerlSetVar BinaryCGI On
 
-   to indicate that the source-generator is supposed to be a CGI binary. Don't use Apache::Filter
-   Chain in this case. Support for CGI/1.1 headers is always On for this type of the source.
+to indicate that the source-generator is supposed to be a CGI binary. Don't use C<Apache::Filter>
+chain in this case. Support for CGI/1.1 headers is always On for this type of the source.
 
- - it will be assumed the plain file transfer, when you use the standing-along handler with
-   no BinaryCGI directive. The Document Content-Type is determined by Apache in this case.
+- it will be assumed the plain file transfer, when you use the standing-along handler with
+no BinaryCGI directive. The Document Content-Type is determined by Apache in this case.
+
+=back
 
 To control the compression ratio and the minimum size of the chunk/buffer for gzipped content
 you can optionally use directives
@@ -2184,10 +2319,16 @@ for example you can try
 
 which are the default in this version. Indeed, you can use your own values, when you know what you are doing...
 
-    Note: You can improve the compression ratio when you increase the value of minChunkSizeSource.
-	  You can control the _minimum_ size of the chunk with the minChunkSize.
+=over 4
+
+=item Note:
+
+You can improve the compression ratio when you increase the value of C<minChunkSizeSource>.
+You can control the _minimum_ size of the chunk with the C<minChunkSize>.
 
 Try to play with these values to find out your best combination!
+
+=back
 
 To control the minimum size of the chunk for uncompressed content over HTTP/1.1 you can optionally use the directive
 
@@ -2197,7 +2338,7 @@ To control the C<extra light> compression you can optionally use the directive
 
     PerlSetVar LightCompression <On/Off>
 
-To turn On the C<extra light> compression you can use the directive
+To turn On the C<extra light> compression use the directive
 
     PerlSetVar LightCompression On
 
@@ -2254,16 +2395,10 @@ Slava Bizyayev E<lt>slava@cpan.orgE<gt> - Freelance Software Developer & Consult
 
 I<Copyright (C) 2002 Slava Bizyayev. All rights reserved.>
 
-  This package is free software.
-  You can use it, redistribute it, and/or modify it under the same terms as Perl itself.
-  The latest version of this module can be found on CPAN.
+This package is free software.
+You can use it, redistribute it, and/or modify it under the same terms as Perl itself.
 
-=head1 ACKNOWLEDGMENTS
-
-Thanks to Tom Evans, Valerio Paolini, and Serge Bizyayev for their valuable idea contributions and multiple testing.
-Thanks to Igor Sysoev and Henrik Nordstrom who helped me with HTTP/1.0 compression features.
-
-Indeed, I hold the full responsibility for how all those contributions are used here.
+The latest version of this module can be found on CPAN.
 
 =head1 SEE ALSO
 
@@ -2280,5 +2415,7 @@ C<Apache::Filter> module can be found on CPAN.
 F<http://www.ietf.org/rfc.html> - rfc search by number (+ index list)
 
 F<http://cgi-spec.golux.com/draft-coar-cgi-v11-03-clean.html> CGI/1.1 rfc
+
+F<http://perl.apache.org/docs/general/correct_headers/correct_headers.html> "Issuing Correct HTTP Headers" by Andreas Koenig
 
 =cut

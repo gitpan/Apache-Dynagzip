@@ -1,11 +1,17 @@
 Revision history for Perl extension Apache::Dynagzip.
 
+0.07  Sun Aug 11 14:58:00 2002
+	- advanced control over the client/proxy cache is provided vith Vary extra value
+	  optionally inputed from the configuration file.
+	- documentation is edited.
+
 0.06  Mon Jun 24 13:05:00 2002
 	- HTTP/1.0 bug is fixed. No chunks for HTTP/1.0 since now.
 	  Just no Content-Length, and Connection: close instead.
 	  gzip compression is provided for HTTP/1.0 in accordance with Accept-Encoding.
 	- light compression exception for <PRE>...</PRE> tag is implemented.
-	- documentation is edited appropriately. 
+	- documentation is edited appropriately.
+	  26322 Jul 24 16:17 Apache-Dynagzip-0.06.tar.gz
 
 0.05  Sat Jun 15 18:00:00 2002
 	- Makefile.PL is fixed in order to survive CPAN tests
@@ -13,13 +19,13 @@ Revision history for Perl extension Apache::Dynagzip.
 
 0.04  Mon Jun 03 14:00:00 2002
 	- README is updated.
-	- Some typos in main doc fixed.
+	- Some typos in main doc were fixed.
 	  24939 Jun  4 14:07 Apache-Dynagzip-0.04.tar.gz
 
 0.03  Sun May 26 14:26:00 2002
 	- fundamental revision of the code to avoid possible copyright questions from Outlook Technologies, Inc.
-	  My own decision to publish the code on CPAN could never be considered a kind of competition with OLT
-	  business, since my layoff clearly demonstrate the fact, that OLT has no business interests
+	  My own decision to publish the code on CPAN could never be considered an any kind of competition with OLT
+	  business, since my layoff clearly demonstrates the fact, that OLT has no business interests
 	  in this market of products and services, and does not plan to work on this market in future.
 	- documentation is edited appropriately.
 	  23002 Jun  3 12:17 Apache-Dynagzip-0.03.tar.gz
