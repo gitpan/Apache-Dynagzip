@@ -54,25 +54,4 @@ HTML document <head> section.
 
 -Glenn
 ===========================================================================
-From: 	Michael.Schroepl@telekurs.de
-To: 	mod_gzip@lists.over.net
-Date: Thu, 8 Aug 2002 19:54:33 +0200
-
-Subject: Antwort: [Mod_gzip] Some IE 5.5 Browsers refusing to compress /
-	 should we force compression?
-
-b) foreign proxy servers that filter out "Accept-Encoding"
-   from HTTP requests because they want to cache content
-   and know that they would run into trouble if confronted
-   with negotiated (= potentially compressed) content,
-   especially because mod_gzip still doesn't even send a
-   "Vary:" header to warn these proxies.
-
-Suggested reading:
-  http://www.schroepl.net/projekte/msie/
-  - visit this page with different browser settings.
-
-Greetings, Michael
-===========================================================================
-
 

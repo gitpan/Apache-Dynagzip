@@ -1,9 +1,14 @@
 Revision history for Apache::Dynagzip.
 
+0.14  Sat Apr 24 22:50:00 2004
+	- documentation was edited in order to make it more clear, especially
+	  regarding previous code dhanges.
+
 0.13  Mon Apr 05 22:40:00 2004
 	- bugfix. Richard Chen discovered the unconditional retrievement of HTTP headers
 	  inside the brench of uncompressed response over HTTP/1.1 for filter chain. The same
 	  bug appears inside the brench of uncompressed response over HTTP/1.0. Fixed now.
+	  31466 Apr  6 00:01 Apache-Dynagzip-0.13.tar.gz
 
 0.12  Mon Mar 15 21:15:00 2004
 	- log the amount of outgoing data. Version to test Igor Jovanovic's issue.
