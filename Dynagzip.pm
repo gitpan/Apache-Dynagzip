@@ -13,7 +13,7 @@ use Fcntl qw(:flock);
 use FileHandle;
 
 use vars qw($VERSION $BUFFERSIZE %ENV);
-$VERSION = "0.09";
+$VERSION = "0.10";
 $BUFFERSIZE = 16384;
 use constant MAGIC1	=> 0x1f ;
 use constant MAGIC2	=> 0x8b ;
@@ -32,6 +32,7 @@ sub can_gzip_for_this_client {
 	# call model: my $can_gzip = can_gzip_for_this_client($r);
 	my $r = shift;
 	my $result = undef; # false is default
+    local $^W = 0;
 	if ($r->header_in('Accept-Encoding') =~ /gzip/){
 		$result = 1; # true
 	}
@@ -39,6 +40,7 @@ sub can_gzip_for_this_client {
 	#
 	return $result;
 }
+
 sub retrieve_all_cgi_headers_via { # call model: my $hdrs = retrieve_all_cgi_headers_via ($fh);
 	my $fh = shift;
 	my $headers;
@@ -48,6 +50,7 @@ sub retrieve_all_cgi_headers_via { # call model: my $hdrs = retrieve_all_cgi_hea
 	}
 	return $headers;
 }
+
 sub send_lightly_compressed_stream { # call model: send_lightly_compressed_stream($r, $fh);
 	# Transfer the stream from filehandle $fh to standard output
 	# using "blank-space compression only...
@@ -95,6 +98,7 @@ sub send_lightly_compressed_stream_chunked { # call model: send_lightly_compress
 	}
 	return $body;
 }
+
 sub chunkable { # call model: $var = chunkable($r);
 	# Check if the response could be chunked
 	#
@@ -114,11 +118,13 @@ sub chunkable { # call model: $var = chunkable($r);
 	}
 	return $result;
 }
+
 sub chunk_out { # call model: my $chunk = chunk_out ($string);
 	my $HttpEol = "\015\012";  # HTTP end of line marker (see RFC 2068)
 	my $source = shift;
 	return  sprintf("%x",length($source)).$HttpEol.$source.$HttpEol;
 }
+
 sub kill_over_env { # just to clean up the unnessessary environment
 	delete($ENV{HISTSIZE});
 	delete($ENV{HOSTNAME});
@@ -145,6 +151,7 @@ sub kill_over_env { # just to clean up the unnessessary environment
 	delete($ENV{_});
 	delete($ENV{HTTP_CONNECTION});
 }
+
 sub cgi_headers_from_script { # call model: my $condition = cgi_headers_from_script($r);
 	my $r = shift;
 	my $res = lc $r->dir_config('UseCGIHeadersFromScript') eq 'on';
@@ -333,7 +340,7 @@ sub handler { # it is supposed to be only a dispatcher since now...
 	} else {
 		$message .= 'Plain File.';
 	}
-	$message .= ' The client '.$r->header_in("User-agent");
+    $message .= ' The client '.($r->header_in("User-agent") || '');
 	if ($can_gzip){
 		$message .= ' accepts GZIP.';
 	} else {
@@ -357,10 +364,13 @@ sub handler { # it is supposed to be only a dispatcher since now...
 
 	# Advanced control over the client/proxy Cache:
 	#
+    {
+	local $^W = 0;
 	my $extra_vary = $r->dir_config('Vary');
 	my $current_vary = $r->header_out("Vary");
 	my $new_vary = join (',',$current_vary,$extra_vary);
 	$r->header_out("Vary" => $new_vary) if $extra_vary;
+    }
 
 my $can_chunk = chunkable($r); # check if it is HTTP/1.1 or higher
 unless ($can_chunk) {
@@ -566,7 +576,7 @@ unless ($can_chunk) {
 			return SERVER_ERROR;
 		}
 		# Create the first outgoing portion of the content:
-		my $gzipHeader = pack("c" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+		my $gzipHeader = pack("C" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
 		my $chunkBody = $gzipHeader; # this is just a portion to output this times...
 
 		my $partialSourceLength = 0;	# the length of the source
@@ -658,7 +668,7 @@ unless ($can_chunk) {
 			return SERVER_ERROR;
 		}
 		# Create the first outgoing portion of the content:
-		my $gzipHeader = pack("c" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+	    my $gzipHeader = pack("C" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
 		my $chunkBody = $gzipHeader;
 
 		my $body = ''; # incoming content
@@ -775,7 +785,7 @@ unless ($can_chunk) {
 		return SERVER_ERROR;
 	}
 	# Create the first outgoing portion of the content:
-	my $gzipHeader = pack("c" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+	my $gzipHeader = pack("C" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
 	my $chunkBody = $gzipHeader;
 	my $body = ''; # incoming content
 	my $partialSourceLength = 0; # the length of the source associated with the portion gzipped in current chunk
@@ -1046,10 +1056,13 @@ unless ($can_chunk) {
 
 	# Advanced control over the client/proxy Cache:
 	#
+    {
+	local $^W = 0;
 	my $extra_vary = $r->dir_config('Vary');
 	my $current_vary = $r->header_out("Vary");
 	my $new_vary = join (',',$current_vary,$extra_vary);
 	$r->header_out("Vary" => $new_vary) if $extra_vary;
+    }
 
 	if ($filter) {
 		$r = $r->filter_register;
@@ -1083,7 +1096,7 @@ unless ($can_chunk) {
 			return SERVER_ERROR;
 		}
 		# Create the first outgoing portion of the content:
-		my $gzipHeader = pack("c" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+	my $gzipHeader = pack("C" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
 		my $chunkBody = $gzipHeader;
 
 		my $partialSourceLength = 0;	# the length of the source
@@ -1178,7 +1191,7 @@ unless ($can_chunk) {
 			return SERVER_ERROR;
 		}
 		# Create the first outgoing portion of the content:
-		my $gzipHeader = pack("c" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+	my $gzipHeader = pack("C" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
 		my $chunkBody = $gzipHeader;
 
 		my $body = ''; # incoming content
@@ -1297,7 +1310,7 @@ unless ($can_chunk) {
 		return SERVER_ERROR;
 	}
 	# Create the first outgoing portion of the content:
-	my $gzipHeader = pack("c" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
+    my $gzipHeader = pack("C" . MIN_HDR_SIZE, MAGIC1, MAGIC2, Z_DEFLATED(), 0,0,0,0,0,0, OSCODE);
 	my $chunkBody = $gzipHeader;
 	my $body = ''; # incoming content
 	my $partialSourceLength = 0; # the length of the source associated with the portion gzipped in current chunk
@@ -1888,6 +1901,7 @@ Thanks to Tom Evans, Valerio Paolini, and Serge Bizyayev for their valuable idea
 Thanks to Igor Sysoev and Henrik Nordstrom who helped me to understand better the HTTP/1.0 compression features.
 Thanks to Vlad Jebelev for the patch which helps to survive possible dynamic Apache downgrade from HTTP/1.1 to HTTP/1.0
 (especially serving MSIE request over SSL).
+Thanks to Rob Bloodgood and Damyan Ivanov for the patches those help to eliminate some unnecessary warnings.
 
 Obviously, I hold the full responsibility for how all those contributions are used here.
 
