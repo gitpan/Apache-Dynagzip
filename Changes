@@ -1,5 +1,7 @@
 Revision history for Perl extension Apache::Dynagzip.
 
+0.11  Mon Jul 21 11:00:00 2003
+
 0.10  Fri Jul 18 23:30:00 2003
 	- Rob Bloodgood and Damyan Ivanov complained about "uninitialized value" warnings from unused
 	  HTTP headers, and about pack mode "c", which generated warnings on their systems (running -w).
@@ -9,6 +11,7 @@ Revision history for Perl extension Apache::Dynagzip.
 	  "Uninitialized value" warnings were blocked in accordance with the patch provided by Rob Bloodgood.
 	  All changes were manually double-checked with the patch provided by Damyan Ivanov.
 	- partial code revision has been done in order to prepare the further structural changes.
+	  30927 Jul 20 01:09 Apache-Dynagzip-0.10.tar.gz
 
 0.09  Sun Jan 05 01:45:00 2003
 	- Vlad Jebelev's patch was applied in order to serve possible dynamic Apache downgrade to HTTP/1.0

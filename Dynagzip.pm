@@ -13,7 +13,7 @@ use Fcntl qw(:flock);
 use FileHandle;
 
 use vars qw($VERSION $BUFFERSIZE %ENV);
-$VERSION = "0.10";
+$VERSION = "0.11";
 $BUFFERSIZE = 16384;
 use constant MAGIC1	=> 0x1f ;
 use constant MAGIC2	=> 0x8b ;
@@ -152,7 +152,11 @@ sub kill_over_env { # just to clean up the unnessessary environment
 	delete($ENV{HTTP_CONNECTION});
 }
 
-sub cgi_headers_from_script { # call model: my $condition = cgi_headers_from_script($r);
+sub cgi_headers_from_script {
+	# boolin function to determine whether it was configured to retrieve CGI headers from script, or not.
+	# 
+	# Could it be possible to have Content-Type coming from the previous filter?
+	# call model: my $condition = cgi_headers_from_script($r);
 	my $r = shift;
 	my $res = lc $r->dir_config('UseCGIHeadersFromScript') eq 'on';
 	return $res;
@@ -181,7 +185,7 @@ sub handler { # it is supposed to be only a dispatcher since now...
 	# No way to send back the Content-Length even when one exists for the plain file...
 	# Just send back the content assuming it is text/html (or whatever is declared by the main response):
 	unless ($r->is_main){
-		# bad luck this time...
+		# this is rdirected request;
 		# No control over the HTTP headers:
 		my $message = ' No control over the chunks is provided. Light Compression is ';
 		if ($light_compression) {
@@ -558,7 +562,7 @@ unless ($can_chunk) {
 			$r->send_cgi_header($headers);
 		} else { # create the own set of HTTP headers:
 			$r->log->debug($qualifiedName.' creates own HTTP headers for '.$r->the_request);
-			$r->content_type("text/html");
+			$r->content_type("text/html") unless $r->header_out('Content-Type');
 			$r->send_http_header;
 		}
 		if ($r->header_only){
@@ -651,7 +655,7 @@ unless ($can_chunk) {
 			$r->log->error($qualifiedName.' aborts: Fails to obtain flock on '.$r->filename);
 			return SERVER_ERROR;
 		}
-#		$r->content_type("text/html");
+#		$r->content_type("text/html") unless $r->header_out('Content-Type');
 		$r->send_http_header;
 		if ($r->header_only){
 			$r->log->info($qualifiedName.' request for header only is OK for ', $r->filename);
@@ -1078,7 +1082,7 @@ unless ($can_chunk) {
 			$r->send_cgi_header($headers);
 		} else { # create the own set of HTTP headers:
 			$r->log->debug($qualifiedName.' creates own HTTP headers for '.$r->the_request);
-			$r->content_type("text/html");
+			$r->content_type("text/html") unless $r->header_out('Content-Type');
 			$r->send_http_header;
 		}
 		if ($r->header_only){
@@ -1174,7 +1178,7 @@ unless ($can_chunk) {
 			$r->log->error($qualifiedName.' aborts: Fails to obtain flock on '.$r->filename);
 			return SERVER_ERROR;
 		}
-		$r->content_type("text/html");
+		$r->content_type("text/html") unless $r->header_out('Content-Type');
 		$r->send_http_header;
 		if ($r->header_only){
 			$r->log->info($qualifiedName.' request for header only is OK for ', $r->filename);
@@ -1902,6 +1906,7 @@ Thanks to Igor Sysoev and Henrik Nordstrom who helped me to understand better th
 Thanks to Vlad Jebelev for the patch which helps to survive possible dynamic Apache downgrade from HTTP/1.1 to HTTP/1.0
 (especially serving MSIE request over SSL).
 Thanks to Rob Bloodgood and Damyan Ivanov for the patches those help to eliminate some unnecessary warnings.
+Thanks to John Siracusa for the hint to avoid the default content type settings when possible.
 
 Obviously, I hold the full responsibility for how all those contributions are used here.
 

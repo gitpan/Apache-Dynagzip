@@ -1,4 +1,4 @@
-Apache/Dynagzip version 0.10
+Apache/Dynagzip version 0.11
 ============================
 
 =head1 NAME
@@ -107,6 +107,8 @@ Thanks to Tom Evans, Valerio Paolini, and Serge Bizyayev for their valuable idea
 Thanks to Igor Sysoev and Henrik Nordstrom who helped me to understand better the HTTP/1.0 compression features.
 Thanks to Vlad Jebelev for the patch which helps to survive possible dynamic Apache downgrade from HTTP/1.1 to HTTP/1.0
 (especially serving MSIE request over SSL).
+Thanks to Rob Bloodgood and Damyan Ivanov for the patches those help to eliminate some unnecessary warnings.
+Thanks to John Siracusa for the hint to avoid the default content type settings when possible.
 
 Obviously, I hold the full responsibility for how all those contributions are used here.
 
